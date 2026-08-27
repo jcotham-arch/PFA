@@ -46,12 +46,66 @@ namespace PFA_FVG_Scanner.Data
             await CreateUniversalMarketRecordTablesAsync(connection);
             await CreateMarketSequenceTablesAsync(connection);
             await CreateStrategyRegistryTablesAsync(connection);
+            await CreateGeneralResearchTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateGeneralResearchTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS GeneralResearchRuns
+                (
+                    ResearchRunId TEXT PRIMARY KEY,
+                    ResearchEngineVersion TEXT NOT NULL,
+                    Status TEXT NOT NULL,
+                    DatasetId TEXT NOT NULL,
+                    DatasetManifestJson TEXT NOT NULL,
+                    SearchSpaceId TEXT NOT NULL,
+                    SearchSpaceVersion TEXT NOT NULL,
+                    SearchSpaceJson TEXT NOT NULL,
+                    DeclaredCandidateCount INTEGER NOT NULL,
+                    MultipleComparisonMethod TEXT NOT NULL,
+                    RandomSeed INTEGER,
+                    PopulationJson TEXT NOT NULL,
+                    InputManifestJson TEXT NOT NULL,
+                    ContentHash TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    CompletedAtUtc TEXT,
+                    FailureReason TEXT,
+                    CanActivateStrategy INTEGER NOT NULL CHECK (CanActivateStrategy = 0)
+                );
+                CREATE TABLE IF NOT EXISTS GeneralResearchHypotheses
+                (
+                    HypothesisId TEXT NOT NULL,
+                    ResearchRunId TEXT NOT NULL,
+                    Signature TEXT NOT NULL,
+                    FamilyId TEXT NOT NULL,
+                    DefinitionJson TEXT NOT NULL,
+                    Status TEXT NOT NULL,
+                    SampleSize INTEGER NOT NULL,
+                    IndependentEvents INTEGER NOT NULL,
+                    MetricsJson TEXT NOT NULL,
+                    SourceReference TEXT NOT NULL,
+                    CanActivateStrategy INTEGER NOT NULL CHECK (CanActivateStrategy = 0),
+                    PRIMARY KEY (ResearchRunId, HypothesisId),
+                    UNIQUE (ResearchRunId, Signature),
+                    FOREIGN KEY (ResearchRunId) REFERENCES GeneralResearchRuns(ResearchRunId)
+                );
+                INSERT OR IGNORE INTO CanonicalMigrationJournal
+                    (MigrationId, AppliedAtUtc, Description)
+                VALUES ('PHASE11_GENERAL_RESEARCH_1', datetime('now'),
+                    'Add immutable reproducible research runs and complete hypothesis search-space retention.');
+                CREATE INDEX IF NOT EXISTS IX_GeneralResearchRuns_Dataset
+                    ON GeneralResearchRuns (DatasetId, CreatedAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_GeneralResearchHypotheses_Status
+                    ON GeneralResearchHypotheses (ResearchRunId, Status);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateStrategyRegistryTablesAsync(SqliteConnection connection)
