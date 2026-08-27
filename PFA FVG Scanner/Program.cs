@@ -12,6 +12,7 @@ using PFA_FVG_Scanner.Domain.Sessions;
 using PFA_FVG_Scanner.Domain.Sequences;
 using PFA_FVG_Scanner.Domain.Strategies;
 using PFA_FVG_Scanner.Domain.Research;
+using PFA_FVG_Scanner.Domain.Evidence;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
@@ -64,6 +65,7 @@ builder.Services.AddSingleton<UniversalMarketRecordRepository>();
 builder.Services.AddSingleton<MarketSequenceRepository>();
 builder.Services.AddSingleton<IStrategyRegistry, StrategyRegistryRepository>();
 builder.Services.AddSingleton<IGeneralResearchRepository, GeneralResearchRepository>();
+builder.Services.AddSingleton<ICrossDayEvidenceRepository, CrossDayEvidenceRepository>();
 
 // Additive Phase 1 foundations. Legacy consumers remain unchanged until
 // compatibility parity is established by later migration phases.

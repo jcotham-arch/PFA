@@ -47,12 +47,44 @@ namespace PFA_FVG_Scanner.Data
             await CreateMarketSequenceTablesAsync(connection);
             await CreateStrategyRegistryTablesAsync(connection);
             await CreateGeneralResearchTablesAsync(connection);
+            await CreateGeneralCrossDayEvidenceTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateGeneralCrossDayEvidenceTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS GeneralCrossDayEvidenceReports
+                (ReportId TEXT PRIMARY KEY,InstrumentId TEXT NOT NULL,EvidenceEngineVersion TEXT NOT NULL,
+                 SessionAssignmentVersion TEXT NOT NULL,StartTradingDate TEXT NOT NULL,EndTradingDate TEXT NOT NULL,
+                 ExpectedTradingDatesJson TEXT NOT NULL,SourceReference TEXT NOT NULL,ContentHash TEXT NOT NULL,
+                 CreatedAtUtc TEXT NOT NULL,CanActivateAnyStrategy INTEGER NOT NULL CHECK(CanActivateAnyStrategy=0));
+                CREATE TABLE IF NOT EXISTS GeneralCrossDaySignatureEvidence
+                (ReportId TEXT NOT NULL,Signature TEXT NOT NULL,FamilyId TEXT NOT NULL,DefinitionVersion TEXT NOT NULL,
+                 DefinitionJson TEXT NOT NULL,Classification TEXT NOT NULL,TotalTradingDays INTEGER NOT NULL,
+                 ObservedDays INTEGER NOT NULL,MissingTradingDatesJson TEXT NOT NULL,PositiveDays INTEGER NOT NULL,
+                 NegativeDays INTEGER NOT NULL,FlatDays INTEGER NOT NULL,TotalSamples INTEGER NOT NULL,
+                 IndependentEvents INTEGER NOT NULL,AggregateMetricsJson TEXT NOT NULL,RegimeIdsJson TEXT NOT NULL,
+                 GatesJson TEXT NOT NULL,CanAdvanceToFrozenValidation INTEGER NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),PRIMARY KEY(ReportId,Signature),
+                 FOREIGN KEY(ReportId) REFERENCES GeneralCrossDayEvidenceReports(ReportId));
+                CREATE TABLE IF NOT EXISTS GeneralCrossDayDailyEvidence
+                (ReportId TEXT NOT NULL,Signature TEXT NOT NULL,TradingDate TEXT NOT NULL,Samples INTEGER NOT NULL,
+                 IndependentEvents INTEGER NOT NULL,MetricsJson TEXT NOT NULL,DailyStatus TEXT NOT NULL,
+                 RegimeIdsJson TEXT NOT NULL,PRIMARY KEY(ReportId,Signature,TradingDate),
+                 FOREIGN KEY(ReportId,Signature) REFERENCES GeneralCrossDaySignatureEvidence(ReportId,Signature));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE12_GENERAL_CROSS_DAY_1',datetime('now'),
+                    'Add immutable cross-day reports, signatures, trading dates, regimes, gates and daily evidence.');
+                CREATE INDEX IF NOT EXISTS IX_GeneralCrossDay_InstrumentDate
+                    ON GeneralCrossDayEvidenceReports(InstrumentId,StartTradingDate,EndTradingDate);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateGeneralResearchTablesAsync(SqliteConnection connection)
