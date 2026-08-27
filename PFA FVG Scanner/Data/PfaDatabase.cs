@@ -54,12 +54,50 @@ namespace PFA_FVG_Scanner.Data
             await CreateWalkForwardValidationTablesAsync(connection);
             await CreateOrderFlowTablesAsync(connection);
             await CreateSandboxLedgerTablesAsync(connection);
+            await CreateGovernanceTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateGovernanceTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS GovernancePolicies
+                (PolicyId TEXT NOT NULL,PolicyVersion TEXT NOT NULL,EffectiveFromUtc TEXT NOT NULL,EffectiveToUtc TEXT,
+                 ContentHash TEXT NOT NULL,PolicyJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,PRIMARY KEY(PolicyId,PolicyVersion));
+                CREATE TABLE IF NOT EXISTS GovernanceApprovalEvents
+                (EventId TEXT PRIMARY KEY,ApprovalId TEXT NOT NULL,EventType TEXT NOT NULL,OccurredAtUtc TEXT NOT NULL,
+                 Actor TEXT NOT NULL,Reason TEXT NOT NULL,PayloadJson TEXT NOT NULL,ContentHash TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS GovernanceSuspensionEvents
+                (EventId TEXT PRIMARY KEY,SuspensionId TEXT NOT NULL,EventType TEXT NOT NULL,OccurredAtUtc TEXT NOT NULL,
+                 Actor TEXT NOT NULL,Reason TEXT NOT NULL,PayloadJson TEXT NOT NULL,ContentHash TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS GovernanceEmergencyStopEvents
+                (EmergencyStopId TEXT PRIMARY KEY,IsActive INTEGER NOT NULL,Reason TEXT NOT NULL,Actor TEXT NOT NULL,
+                 OccurredAtUtc TEXT NOT NULL,PayloadJson TEXT NOT NULL,ContentHash TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS GovernanceDecisions
+                (DecisionId TEXT PRIMARY KEY,RequestId TEXT NOT NULL,Outcome TEXT NOT NULL,PolicyId TEXT NOT NULL,
+                 PolicyVersion TEXT NOT NULL,AccountId TEXT NOT NULL,InstanceId TEXT NOT NULL,SignalId TEXT NOT NULL,
+                 DecidedAtUtc TEXT NOT NULL,ContentHash TEXT NOT NULL,DecisionJson TEXT NOT NULL,
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                CREATE TABLE IF NOT EXISTS GovernanceIncidents
+                (IncidentId TEXT PRIMARY KEY,Severity TEXT NOT NULL,Category TEXT NOT NULL,AccountId TEXT,
+                 InstanceId TEXT,OccurredAtUtc TEXT NOT NULL,Summary TEXT NOT NULL,EvidenceJson TEXT NOT NULL,ContentHash TEXT NOT NULL);
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE19_GOVERNANCE_1',datetime('now'),
+                    'Add default-deny policy, approval, suspension, emergency-stop, decision and incident audit records.');
+                CREATE INDEX IF NOT EXISTS IX_GovernanceDecisions_AccountTime ON GovernanceDecisions(AccountId,DecidedAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_GovernanceApprovalEvents_Approval ON GovernanceApprovalEvents(ApprovalId,OccurredAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_GovernanceSuspensionEvents_Suspension ON GovernanceSuspensionEvents(SuspensionId,OccurredAtUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_GovernancePolicies_NoUpdate BEFORE UPDATE ON GovernancePolicies BEGIN SELECT RAISE(ABORT,'Governance policies are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_GovernancePolicies_NoDelete BEFORE DELETE ON GovernancePolicies BEGIN SELECT RAISE(ABORT,'Governance policies are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_GovernanceDecisions_NoUpdate BEFORE UPDATE ON GovernanceDecisions BEGIN SELECT RAISE(ABORT,'Governance decisions are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_GovernanceDecisions_NoDelete BEFORE DELETE ON GovernanceDecisions BEGIN SELECT RAISE(ABORT,'Governance decisions are immutable'); END;
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateSandboxLedgerTablesAsync(SqliteConnection connection)

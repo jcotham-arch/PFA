@@ -14,8 +14,8 @@ public sealed record SandboxMarketRequest(string CommandId,SandboxMarketSlice Ma
 [Route("api/sandbox")]
 public sealed class SandboxController:ControllerBase
 {
-    private readonly SandboxService _service;private readonly SandboxControlAuthorizer _authorization;
-    public SandboxController(SandboxService service,SandboxControlAuthorizer authorization){_service=service;_authorization=authorization;}
+    private readonly SandboxService _service;private readonly GovernedSandboxService _governed;private readonly SandboxControlAuthorizer _authorization;
+    public SandboxController(SandboxService service,GovernedSandboxService governed,SandboxControlAuthorizer authorization){_service=service;_governed=governed;_authorization=authorization;}
     [HttpGet("capabilities")]
     public ActionResult Capabilities()=>Ok(new{virtualOnly=true,realBrokerRoutes=false,controlTokenConfigured=_authorization.IsConfigured,controlAndReadRequireToken=true,appendOnlyLedger=true,noFutureClock=true,automaticStrategyActivation=false,fillModel="explicit-versioned"});
     [HttpPost("accounts")]
@@ -25,7 +25,7 @@ public sealed class SandboxController:ControllerBase
     [HttpPost("accounts/{accountId}/instances/{instanceId}/start")]
     public async Task<ActionResult<SandboxAccountState>> Start(string accountId,string instanceId,SandboxCommandRequest request,CancellationToken token){if(!Authorized(out var denied))return denied;return await Execute(()=>_service.StartInstanceAsync(request.CommandId,accountId,instanceId,token));}
     [HttpPost("accounts/{accountId}/signals")]
-    public async Task<ActionResult<SandboxAccountState>> Signal(string accountId,SandboxSignalRequest request,CancellationToken token){if(!Authorized(out var denied))return denied;return await Execute(()=>_service.SubmitSignalAsync(request.CommandId,accountId,request.Signal,request.FillModel,token));}
+    public async Task<ActionResult> Signal(string accountId,SandboxSignalRequest request,CancellationToken token){if(!Authorized(out var denied))return denied;try{var result=await _governed.SubmitSignalAsync(request.CommandId,accountId,request.Signal,request.FillModel,token);return result.State is null?StatusCode(403,result):Ok(result);}catch(KeyNotFoundException ex){return NotFound(new{message=ex.Message});}catch(ArgumentException ex){return BadRequest(new{message=ex.Message});}catch(InvalidOperationException ex){return Conflict(new{message=ex.Message});}}
     [HttpPost("accounts/{accountId}/market")]
     public async Task<ActionResult<SandboxAccountState>> Market(string accountId,SandboxMarketRequest request,CancellationToken token){if(!Authorized(out var denied))return denied;return await Execute(()=>_service.ProcessMarketAsync(request.CommandId,accountId,request.Market,request.FillModel,token));}
     [HttpPost("accounts/{accountId}/orders/{orderId}/cancel")]
