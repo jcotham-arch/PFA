@@ -4,6 +4,7 @@ using PFA_FVG_Scanner.Domain.Contracts;
 using PFA_FVG_Scanner.Domain.Features;
 using PFA_FVG_Scanner.Domain.Instruments;
 using PFA_FVG_Scanner.Domain.MarketState;
+using PFA_FVG_Scanner.Domain.Patterns;
 using PFA_FVG_Scanner.Domain.Sessions;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
@@ -66,6 +67,8 @@ builder.Services.AddSingleton<IFeatureDefinitionRegistry, FeatureDefinitionRegis
 builder.Services.AddSingleton<LegacyFvgFeatureAdapter>();
 builder.Services.AddSingleton<IMarketStateEngine, MarketStateEngine>();
 builder.Services.AddSingleton<FeatureStateRepository>();
+builder.Services.AddSingleton<IMarketPatternModuleRegistry, MarketPatternModuleRegistry>();
+builder.Services.AddSingleton<MarketChartService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES
