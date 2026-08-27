@@ -12,17 +12,20 @@ namespace PFA_FVG_Scanner.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly RawMarketEventRepository _rawRepository;
         private readonly CandleRepository _candleRepository;
+        private readonly CanonicalMarketDataIngestionService _canonicalIngestion;
 
         public MassiveBackfillService(
             MassiveOptions options,
             IHttpClientFactory httpClientFactory,
             RawMarketEventRepository rawRepository,
-            CandleRepository candleRepository)
+            CandleRepository candleRepository,
+            CanonicalMarketDataIngestionService canonicalIngestion)
         {
             _options = options;
             _httpClientFactory = httpClientFactory;
             _rawRepository = rawRepository;
             _candleRepository = candleRepository;
+            _canonicalIngestion = canonicalIngestion;
         }
 
         public async Task<BackfillResult> BackfillOneMinuteBarsAsync(
@@ -199,6 +202,10 @@ namespace PFA_FVG_Scanner.Services
 
                     cancellationToken:
                         cancellationToken);
+
+                await _canonicalIngestion.TryIngestAsync(
+                    candle, "Massive Historical Backfill", "AM_BACKFILL", DateTime.UtcNow,
+                    $"BACKFILL|{startUtc:O}|{endUtc:O}", rawPayload, cancellationToken);
 
                 saved++;
             }

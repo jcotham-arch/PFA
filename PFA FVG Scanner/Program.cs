@@ -3,6 +3,7 @@ using PFA_FVG_Scanner.Data;
 using PFA_FVG_Scanner.Domain.Contracts;
 using PFA_FVG_Scanner.Domain.Instruments;
 using PFA_FVG_Scanner.Domain.Sessions;
+using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
 
@@ -47,6 +48,9 @@ builder.Services.AddSingleton<FvgOutcomeRepository>();
 builder.Services.AddSingleton<IInstrumentDefinitionRegistry, InstrumentDefinitionRegistry>();
 builder.Services.AddSingleton<IContractResolver, ContractResolver>();
 builder.Services.AddSingleton<ITradingSessionService, LegacyUtcTradingSessionService>();
+builder.Services.AddSingleton<ICanonicalBarCanonicalizer, CanonicalBarCanonicalizer>();
+builder.Services.AddSingleton<CanonicalTimelineRepository>();
+builder.Services.AddSingleton<CanonicalMarketDataIngestionService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES

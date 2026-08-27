@@ -10,6 +10,7 @@ namespace PFA_FVG_Scanner.Services
         private readonly CandleProcessingService _processor;
         private readonly CandleRepository _candleRepository;
         private readonly ObservationRepository _observationRepository;
+        private readonly CanonicalMarketDataIngestionService _canonicalIngestion;
 
         private bool _initialized;
 
@@ -23,12 +24,14 @@ namespace PFA_FVG_Scanner.Services
             IMarketDataProvider provider,
             CandleProcessingService processor,
             CandleRepository candleRepository,
-            ObservationRepository observationRepository)
+            ObservationRepository observationRepository,
+            CanonicalMarketDataIngestionService canonicalIngestion)
         {
             _provider = provider;
             _processor = processor;
             _candleRepository = candleRepository;
             _observationRepository = observationRepository;
+            _canonicalIngestion = canonicalIngestion;
         }
 
         public IMarketDataProvider Provider =>
@@ -62,6 +65,9 @@ namespace PFA_FVG_Scanner.Services
                 _observationRepository.SaveFvg(
                     LastProcessingResult.DetectedFvg);
             }
+
+            await _canonicalIngestion.TryIngestAsync(
+                candle, _provider.ProviderName, "LIVE_CLOSED_CANDLE", DateTime.UtcNow, "LIVE");
         }
     }
 }

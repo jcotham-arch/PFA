@@ -40,12 +40,82 @@ namespace PFA_FVG_Scanner.Data
             await CreateSetupsTableAsync(connection);
             await CreateOutcomesTableAsync(connection);
             await CreateExperimentsTableAsync(connection);
+            await CreateCanonicalTimelineTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateCanonicalTimelineTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS CanonicalBars
+                (
+                    CanonicalBarId TEXT NOT NULL,
+                    Revision INTEGER NOT NULL,
+                    InstrumentId TEXT NOT NULL,
+                    ContractId TEXT,
+                    ProviderSymbol TEXT NOT NULL,
+                    Timeframe TEXT NOT NULL,
+                    OpenTimeUtc TEXT NOT NULL,
+                    CloseTimeUtc TEXT NOT NULL,
+                    Open TEXT NOT NULL,
+                    High TEXT NOT NULL,
+                    Low TEXT NOT NULL,
+                    Close TEXT NOT NULL,
+                    Volume TEXT NOT NULL,
+                    IsComplete INTEGER NOT NULL,
+                    TradingSessionId TEXT NOT NULL,
+                    TradingDate TEXT NOT NULL,
+                    CanonicalizationVersion TEXT NOT NULL,
+                    TransformationVersion TEXT NOT NULL,
+                    CorrectionState TEXT NOT NULL,
+                    QualityFlags INTEGER NOT NULL,
+                    RevisionEffectiveUtc TEXT NOT NULL,
+                    ContentHash TEXT NOT NULL,
+                    PRIMARY KEY (CanonicalBarId, Revision)
+                );
+
+                CREATE TABLE IF NOT EXISTS CanonicalBarSources
+                (
+                    SourceId TEXT PRIMARY KEY,
+                    CanonicalBarId TEXT NOT NULL,
+                    Revision INTEGER NOT NULL,
+                    Provider TEXT NOT NULL,
+                    ProviderSymbol TEXT NOT NULL,
+                    SourceEventType TEXT NOT NULL,
+                    SourceResolution TEXT NOT NULL,
+                    SourceTimestampUtc TEXT NOT NULL,
+                    ReceivedTimestampUtc TEXT NOT NULL,
+                    SourceVersion TEXT NOT NULL,
+                    IngestionRunId TEXT NOT NULL,
+                    RawReference TEXT,
+                    FOREIGN KEY (CanonicalBarId, Revision)
+                        REFERENCES CanonicalBars(CanonicalBarId, Revision)
+                );
+
+                CREATE TABLE IF NOT EXISTS CanonicalMigrationJournal
+                (
+                    MigrationId TEXT PRIMARY KEY,
+                    AppliedAtUtc TEXT NOT NULL,
+                    Description TEXT NOT NULL
+                );
+
+                INSERT OR IGNORE INTO CanonicalMigrationJournal
+                    (MigrationId, AppliedAtUtc, Description)
+                VALUES
+                    ('PHASE2_CANONICAL_TIMELINE_1', datetime('now'),
+                     'Additive canonical bars, revisions, lineage, provenance and quality flags.');
+
+                CREATE INDEX IF NOT EXISTS IX_CanonicalBars_Instrument_Time
+                    ON CanonicalBars (InstrumentId, Timeframe, OpenTimeUtc, Revision);
+                CREATE INDEX IF NOT EXISTS IX_CanonicalBarSources_Bar
+                    ON CanonicalBarSources (CanonicalBarId, Revision);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         public SqliteConnection CreateConnection()
