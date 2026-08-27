@@ -44,12 +44,82 @@ namespace PFA_FVG_Scanner.Data
             await CreateFeatureStateTablesAsync(connection);
             await CreateUniversalPatternReferenceTablesAsync(connection);
             await CreateUniversalMarketRecordTablesAsync(connection);
+            await CreateMarketSequenceTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateMarketSequenceTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS MarketSequenceDefinitions
+                (
+                    SequenceDefinitionId TEXT NOT NULL,
+                    Version TEXT NOT NULL,
+                    DisplayName TEXT NOT NULL,
+                    MaximumTransitionSeconds INTEGER NOT NULL,
+                    RequireSameDirection INTEGER NOT NULL,
+                    DefinitionJson TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    PRIMARY KEY (SequenceDefinitionId, Version)
+                );
+                CREATE TABLE IF NOT EXISTS MarketSequenceInstances
+                (
+                    SequenceInstanceId TEXT PRIMARY KEY,
+                    SequenceDefinitionId TEXT NOT NULL,
+                    SequenceDefinitionVersion TEXT NOT NULL,
+                    InstrumentId TEXT NOT NULL,
+                    ContractId TEXT,
+                    Timeframe TEXT NOT NULL,
+                    TradingSessionId TEXT NOT NULL,
+                    TradingDate TEXT NOT NULL,
+                    State TEXT NOT NULL,
+                    CurrentStageIndex INTEGER NOT NULL,
+                    StartedAtUtc TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL,
+                    PointInTimeConfidence TEXT NOT NULL,
+                    TerminationReason TEXT,
+                    CreatedAtUtc TEXT NOT NULL,
+                    FOREIGN KEY (SequenceDefinitionId, SequenceDefinitionVersion)
+                        REFERENCES MarketSequenceDefinitions(SequenceDefinitionId, Version)
+                );
+                CREATE TABLE IF NOT EXISTS MarketSequenceMembers
+                (
+                    SequenceInstanceId TEXT NOT NULL,
+                    ObservationId TEXT NOT NULL,
+                    ObservationRevision INTEGER NOT NULL,
+                    Role TEXT NOT NULL,
+                    Ordinal INTEGER NOT NULL,
+                    JoinedAtUtc TEXT NOT NULL,
+                    PRIMARY KEY (SequenceInstanceId, Ordinal),
+                    FOREIGN KEY (SequenceInstanceId) REFERENCES MarketSequenceInstances(SequenceInstanceId)
+                );
+                CREATE TABLE IF NOT EXISTS MarketSequenceTransitions
+                (
+                    SequenceInstanceId TEXT NOT NULL,
+                    Ordinal INTEGER NOT NULL,
+                    FromRole TEXT NOT NULL,
+                    ToRole TEXT NOT NULL,
+                    OccurredAtUtc TEXT NOT NULL,
+                    DurationMilliseconds INTEGER NOT NULL,
+                    PointInTimeConfidence TEXT NOT NULL,
+                    PRIMARY KEY (SequenceInstanceId, Ordinal),
+                    FOREIGN KEY (SequenceInstanceId) REFERENCES MarketSequenceInstances(SequenceInstanceId)
+                );
+                INSERT OR IGNORE INTO CanonicalMigrationJournal
+                    (MigrationId, AppliedAtUtc, Description)
+                VALUES ('PHASE7_SEQUENCE_INTELLIGENCE_1', datetime('now'),
+                    'Add immutable sequence definitions, instances, members and ordered transitions.');
+                CREATE INDEX IF NOT EXISTS IX_MarketSequences_Instrument_Date
+                    ON MarketSequenceInstances (InstrumentId, TradingDate, StartedAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_MarketSequenceMembers_Observation
+                    ON MarketSequenceMembers (ObservationId, ObservationRevision);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateUniversalMarketRecordTablesAsync(SqliteConnection connection)

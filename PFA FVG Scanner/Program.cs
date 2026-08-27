@@ -7,6 +7,7 @@ using PFA_FVG_Scanner.Domain.MarketState;
 using PFA_FVG_Scanner.Domain.Patterns;
 using PFA_FVG_Scanner.Domain.Patterns.Fvg;
 using PFA_FVG_Scanner.Domain.Sessions;
+using PFA_FVG_Scanner.Domain.Sequences;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
@@ -56,6 +57,7 @@ builder.Services.AddSingleton<ObservationRepository>();
 
 builder.Services.AddSingleton<FvgOutcomeRepository>();
 builder.Services.AddSingleton<UniversalMarketRecordRepository>();
+builder.Services.AddSingleton<MarketSequenceRepository>();
 
 // Additive Phase 1 foundations. Legacy consumers remain unchanged until
 // compatibility parity is established by later migration phases.
@@ -72,6 +74,8 @@ builder.Services.AddSingleton<FeatureStateRepository>();
 builder.Services.AddSingleton<IMarketPatternModuleRegistry, MarketPatternModuleRegistry>();
 builder.Services.AddSingleton<FvgPatternModule>();
 builder.Services.AddSingleton<MarketChartService>();
+builder.Services.AddSingleton<IMarketSequenceDefinitionRegistry, MarketSequenceDefinitionRegistry>();
+builder.Services.AddSingleton<IMarketSequenceEngine, MarketSequenceEngine>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES
