@@ -14,6 +14,7 @@ using PFA_FVG_Scanner.Domain.Strategies;
 using PFA_FVG_Scanner.Domain.Research;
 using PFA_FVG_Scanner.Domain.Evidence;
 using PFA_FVG_Scanner.Domain.Execution;
+using PFA_FVG_Scanner.Domain.Historical;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
@@ -71,6 +72,7 @@ builder.Services.AddSingleton<ICrossMarketEvidenceService, CrossMarketEvidenceSe
 builder.Services.AddSingleton<ICrossMarketEvidenceRepository, CrossMarketEvidenceRepository>();
 builder.Services.AddSingleton<IExecutionAmbiguityResolver, ExecutionAmbiguityResolver>();
 builder.Services.AddSingleton<IExecutionAmbiguityRepository, ExecutionAmbiguityRepository>();
+builder.Services.AddSingleton<HistoricalPipelineRepository>();
 
 // Additive Phase 1 foundations. Legacy consumers remain unchanged until
 // compatibility parity is established by later migration phases.
@@ -138,6 +140,9 @@ builder.Services.AddSingleton<FvgOutOfSampleValidationService>();
 // ------------------------------------------------------------
 
 builder.Services.AddSingleton<HistoricalCandleRebuildService>();
+builder.Services.AddSingleton<HistoricalUniversePlanner>();
+builder.Services.AddSingleton<IHistoricalWindowProcessor, LegacyHistoricalWindowProcessor>();
+builder.Services.AddSingleton<HistoricalPipelineService>();
 
 builder.Services.AddSingleton<FvgQualificationService>();
 

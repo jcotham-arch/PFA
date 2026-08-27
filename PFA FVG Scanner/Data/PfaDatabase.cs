@@ -50,12 +50,50 @@ namespace PFA_FVG_Scanner.Data
             await CreateGeneralCrossDayEvidenceTablesAsync(connection);
             await CreateCrossMarketEvidenceTablesAsync(connection);
             await CreateExecutionAmbiguityTablesAsync(connection);
+            await CreateHistoricalPipelineTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateHistoricalPipelineTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS HistoricalPipelineJobs
+                (JobId TEXT PRIMARY KEY,PlanId TEXT NOT NULL UNIQUE,Status TEXT NOT NULL,PlanJson TEXT NOT NULL,
+                 CreatedAtUtc TEXT NOT NULL,UpdatedAtUtc TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS HistoricalPipelineCheckpoints
+                (JobId TEXT NOT NULL,WorkId TEXT NOT NULL,InstrumentId TEXT NOT NULL,ProviderSymbol TEXT NOT NULL,
+                 WindowStartUtc TEXT NOT NULL,WindowEndUtc TEXT NOT NULL,Status TEXT NOT NULL,AttemptCount INTEGER NOT NULL,
+                 ResultJson TEXT,LastError TEXT,UpdatedAtUtc TEXT NOT NULL,PRIMARY KEY(JobId,WorkId),
+                 FOREIGN KEY(JobId) REFERENCES HistoricalPipelineJobs(JobId));
+                CREATE TABLE IF NOT EXISTS HistoricalPipelineRuns
+                (RunId TEXT PRIMARY KEY,JobId TEXT NOT NULL,Status TEXT NOT NULL,StartedAtUtc TEXT NOT NULL,
+                 CompletedAtUtc TEXT,FailureReason TEXT,FOREIGN KEY(JobId) REFERENCES HistoricalPipelineJobs(JobId));
+                CREATE TABLE IF NOT EXISTS HistoricalCoverageRecords
+                (JobId TEXT NOT NULL,WorkId TEXT NOT NULL,InstrumentId TEXT NOT NULL,ProviderSymbol TEXT NOT NULL,
+                 InstrumentDefinitionVersion TEXT NOT NULL,SourceResolution TEXT NOT NULL,RebuildResolution TEXT NOT NULL,WindowStartUtc TEXT NOT NULL,WindowEndUtc TEXT NOT NULL,
+                 StartTradingSessionId TEXT NOT NULL,EndTradingSessionId TEXT NOT NULL,BarsReturned INTEGER NOT NULL,
+                 BarsSaved INTEGER NOT NULL,RebuiltCandles INTEGER NOT NULL,QualityIssueCount INTEGER NOT NULL,
+                 UpdatedAtUtc TEXT NOT NULL,PRIMARY KEY(JobId,WorkId),FOREIGN KEY(JobId,WorkId) REFERENCES HistoricalPipelineCheckpoints(JobId,WorkId));
+                CREATE TABLE IF NOT EXISTS HistoricalDatasetManifests
+                (ManifestId TEXT PRIMARY KEY,JobId TEXT NOT NULL UNIQUE,PlanId TEXT NOT NULL,Status TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,ManifestJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 FOREIGN KEY(JobId) REFERENCES HistoricalPipelineJobs(JobId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE15_HISTORICAL_PIPELINE_1',datetime('now'),
+                    'Add idempotent multi-instrument jobs, per-window checkpoints and reproducible dataset manifests.');
+                CREATE INDEX IF NOT EXISTS IX_HistoricalCheckpoints_Status
+                    ON HistoricalPipelineCheckpoints(JobId,Status,InstrumentId,WindowStartUtc);
+                CREATE INDEX IF NOT EXISTS IX_HistoricalRuns_Job
+                    ON HistoricalPipelineRuns(JobId,StartedAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_HistoricalCoverage_Instrument
+                    ON HistoricalCoverageRecords(InstrumentId,WindowStartUtc,WindowEndUtc);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateExecutionAmbiguityTablesAsync(SqliteConnection connection)
