@@ -19,6 +19,7 @@ using PFA_FVG_Scanner.Domain.Validation;
 using PFA_FVG_Scanner.Domain.OrderFlow;
 using PFA_FVG_Scanner.Domain.Sandbox;
 using PFA_FVG_Scanner.Domain.Governance;
+using PFA_FVG_Scanner.Domain.Forward;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
@@ -81,6 +82,7 @@ builder.Services.AddSingleton<IWalkForwardValidationRepository, WalkForwardValid
 builder.Services.AddSingleton<OrderFlowRepository>();
 builder.Services.AddSingleton<SandboxLedgerRepository>();
 builder.Services.AddSingleton<GovernanceRepository>();
+builder.Services.AddSingleton<ForwardCampaignRepository>();
 
 // Additive Phase 1 foundations. Legacy consumers remain unchanged until
 // compatibility parity is established by later migration phases.
@@ -160,6 +162,11 @@ builder.Services.AddSingleton<IGovernancePermitValidator>(sp=>sp.GetRequiredServ
 builder.Services.AddSingleton<IGovernanceHealthProvider, WatchdogGovernanceHealthProvider>();
 builder.Services.AddSingleton<GovernanceService>();
 builder.Services.AddSingleton<GovernedSandboxService>();
+builder.Services.AddSingleton<ForwardExpectationComparator>();
+builder.Services.AddSingleton<IForwardHealthProvider, WatchdogForwardHealthProvider>();
+builder.Services.AddSingleton<ForwardCampaignService>();
+builder.Services.AddSingleton<ForwardCampaignMonitorService>();
+builder.Services.AddHostedService(sp=>sp.GetRequiredService<ForwardCampaignMonitorService>());
 
 // ------------------------------------------------------------
 // HISTORICAL REBUILD

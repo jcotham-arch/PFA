@@ -55,12 +55,54 @@ namespace PFA_FVG_Scanner.Data
             await CreateOrderFlowTablesAsync(connection);
             await CreateSandboxLedgerTablesAsync(connection);
             await CreateGovernanceTablesAsync(connection);
+            await CreateForwardCampaignTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateForwardCampaignTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS ForwardCampaigns
+                (CampaignId TEXT PRIMARY KEY,AccountId TEXT NOT NULL,InstanceId TEXT NOT NULL,StrategyId TEXT NOT NULL,
+                 StrategyVersion TEXT NOT NULL,ExpectationId TEXT NOT NULL,ExpectationContentHash TEXT NOT NULL,
+                 CampaignJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,CanPromoteStrategy INTEGER NOT NULL CHECK(CanPromoteStrategy=0));
+                CREATE TABLE IF NOT EXISTS ForwardCampaignEvents
+                (CampaignEventId TEXT PRIMARY KEY,CampaignId TEXT NOT NULL,EventType TEXT NOT NULL,Status TEXT NOT NULL,
+                 OccurredAtUtc TEXT NOT NULL,Actor TEXT NOT NULL,Reason TEXT NOT NULL,ContentHash TEXT NOT NULL,
+                 FOREIGN KEY(CampaignId) REFERENCES ForwardCampaigns(CampaignId));
+                CREATE TABLE IF NOT EXISTS ForwardHealthSamples
+                (SampleId TEXT PRIMARY KEY,CampaignId TEXT NOT NULL,SampledAtUtc TEXT NOT NULL,FeedHealthy INTEGER NOT NULL,
+                 FeedStale INTEGER NOT NULL,ContentHash TEXT NOT NULL,SampleJson TEXT NOT NULL,
+                 FOREIGN KEY(CampaignId) REFERENCES ForwardCampaigns(CampaignId));
+                CREATE TABLE IF NOT EXISTS ForwardDailySnapshots
+                (SnapshotId TEXT PRIMARY KEY,CampaignId TEXT NOT NULL,TradingDate TEXT NOT NULL,KnownAtUtc TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,SnapshotJson TEXT NOT NULL,CanPromoteStrategy INTEGER NOT NULL CHECK(CanPromoteStrategy=0),
+                 UNIQUE(CampaignId,TradingDate),FOREIGN KEY(CampaignId) REFERENCES ForwardCampaigns(CampaignId));
+                CREATE TABLE IF NOT EXISTS ForwardComparisons
+                (ComparisonId TEXT PRIMARY KEY,CampaignId TEXT NOT NULL,Status TEXT NOT NULL,ComparedAtUtc TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,ComparisonJson TEXT NOT NULL,CanPromoteStrategy INTEGER NOT NULL CHECK(CanPromoteStrategy=0),
+                 FOREIGN KEY(CampaignId) REFERENCES ForwardCampaigns(CampaignId));
+                CREATE TABLE IF NOT EXISTS ForwardIncidents
+                (IncidentId TEXT PRIMARY KEY,CampaignId TEXT NOT NULL,Category TEXT NOT NULL,OccurredAtUtc TEXT NOT NULL,
+                 Summary TEXT NOT NULL,EvidenceJson TEXT NOT NULL,ContentHash TEXT NOT NULL,
+                 FOREIGN KEY(CampaignId) REFERENCES ForwardCampaigns(CampaignId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE20_FORWARD_CAMPAIGNS_1',datetime('now'),
+                    'Add forward campaigns, health telemetry, closed-day snapshots, comparisons and safe-suspension incidents.');
+                CREATE INDEX IF NOT EXISTS IX_ForwardCampaignEvents_Status ON ForwardCampaignEvents(CampaignId,OccurredAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_ForwardHealthSamples_CampaignTime ON ForwardHealthSamples(CampaignId,SampledAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_ForwardComparisons_CampaignTime ON ForwardComparisons(CampaignId,ComparedAtUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_ForwardCampaigns_NoUpdate BEFORE UPDATE ON ForwardCampaigns BEGIN SELECT RAISE(ABORT,'Forward campaigns are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_ForwardCampaigns_NoDelete BEFORE DELETE ON ForwardCampaigns BEGIN SELECT RAISE(ABORT,'Forward campaigns are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_ForwardSnapshots_NoUpdate BEFORE UPDATE ON ForwardDailySnapshots BEGIN SELECT RAISE(ABORT,'Forward snapshots are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_ForwardComparisons_NoUpdate BEFORE UPDATE ON ForwardComparisons BEGIN SELECT RAISE(ABORT,'Forward comparisons are immutable'); END;
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateGovernanceTablesAsync(SqliteConnection connection)
