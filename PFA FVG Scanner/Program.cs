@@ -1,5 +1,8 @@
 using System.Text.Json.Serialization;
 using PFA_FVG_Scanner.Data;
+using PFA_FVG_Scanner.Domain.Contracts;
+using PFA_FVG_Scanner.Domain.Instruments;
+using PFA_FVG_Scanner.Domain.Sessions;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
 
@@ -38,6 +41,12 @@ builder.Services.AddSingleton<RawMarketEventRepository>();
 builder.Services.AddSingleton<ObservationRepository>();
 
 builder.Services.AddSingleton<FvgOutcomeRepository>();
+
+// Additive Phase 1 foundations. Legacy consumers remain unchanged until
+// compatibility parity is established by later migration phases.
+builder.Services.AddSingleton<IInstrumentDefinitionRegistry, InstrumentDefinitionRegistry>();
+builder.Services.AddSingleton<IContractResolver, ContractResolver>();
+builder.Services.AddSingleton<ITradingSessionService, LegacyUtcTradingSessionService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES
