@@ -49,12 +49,40 @@ namespace PFA_FVG_Scanner.Data
             await CreateGeneralResearchTablesAsync(connection);
             await CreateGeneralCrossDayEvidenceTablesAsync(connection);
             await CreateCrossMarketEvidenceTablesAsync(connection);
+            await CreateExecutionAmbiguityTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateExecutionAmbiguityTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS ExecutionEvidenceRequests
+                (RequestId TEXT PRIMARY KEY,SubjectId TEXT NOT NULL,InstrumentId TEXT NOT NULL,Direction TEXT NOT NULL,
+                 WindowStartUtc TEXT NOT NULL,WindowEndUtc TEXT NOT NULL,StopPrice TEXT NOT NULL,TargetPrice TEXT NOT NULL,
+                 OriginalResolution TEXT NOT NULL,ExecutionModelVersion TEXT NOT NULL,DataRevision TEXT NOT NULL,
+                 RequestJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS ExecutionAmbiguityResults
+                (ResultId TEXT PRIMARY KEY,RequestId TEXT NOT NULL,Chronology TEXT NOT NULL,ResolvedAtResolution TEXT,
+                 FirstEventTimeUtc TEXT,ResolutionEngineVersion TEXT NOT NULL,ResultJson TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 UsedOptimisticFallback INTEGER NOT NULL CHECK(UsedOptimisticFallback=0),
+                 FOREIGN KEY(RequestId) REFERENCES ExecutionEvidenceRequests(RequestId));
+                CREATE TABLE IF NOT EXISTS ExecutionResolutionAttempts
+                (ResultId TEXT NOT NULL,Ordinal INTEGER NOT NULL,Resolution TEXT NOT NULL,Result TEXT NOT NULL,
+                 Reason TEXT NOT NULL,SourceReferencesJson TEXT NOT NULL,PRIMARY KEY(ResultId,Ordinal),
+                 FOREIGN KEY(ResultId) REFERENCES ExecutionAmbiguityResults(ResultId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE14_EXECUTION_AMBIGUITY_1',datetime('now'),
+                    'Add conservative higher-resolution ambiguity requests, attempts, lineage and results.');
+                CREATE INDEX IF NOT EXISTS IX_ExecutionAmbiguity_Subject
+                    ON ExecutionEvidenceRequests(SubjectId,WindowStartUtc);
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateCrossMarketEvidenceTablesAsync(SqliteConnection connection)
