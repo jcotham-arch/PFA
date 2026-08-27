@@ -17,6 +17,7 @@ using PFA_FVG_Scanner.Domain.Execution;
 using PFA_FVG_Scanner.Domain.Historical;
 using PFA_FVG_Scanner.Domain.Validation;
 using PFA_FVG_Scanner.Domain.OrderFlow;
+using PFA_FVG_Scanner.Domain.Sandbox;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
@@ -77,6 +78,7 @@ builder.Services.AddSingleton<IExecutionAmbiguityRepository, ExecutionAmbiguityR
 builder.Services.AddSingleton<HistoricalPipelineRepository>();
 builder.Services.AddSingleton<IWalkForwardValidationRepository, WalkForwardValidationRepository>();
 builder.Services.AddSingleton<OrderFlowRepository>();
+builder.Services.AddSingleton<SandboxLedgerRepository>();
 
 // Additive Phase 1 foundations. Legacy consumers remain unchanged until
 // compatibility parity is established by later migration phases.
@@ -144,6 +146,12 @@ builder.Services.AddSingleton<OrderFlowCanonicalizer>();
 builder.Services.AddSingleton<TradeAggressorClassifier>();
 builder.Services.AddSingleton<OrderFlowFeatureEngine>();
 builder.Services.AddSingleton<OrderFlowService>();
+builder.Services.AddSingleton<ISandboxClock, SystemSandboxClock>();
+builder.Services.AddSingleton<SandboxStateProjector>();
+builder.Services.AddSingleton<SandboxBrokerSimulator>();
+builder.Services.AddSingleton<SandboxPortfolioProjector>();
+builder.Services.AddSingleton<SandboxControlAuthorizer>();
+builder.Services.AddSingleton<SandboxService>();
 
 // ------------------------------------------------------------
 // HISTORICAL REBUILD

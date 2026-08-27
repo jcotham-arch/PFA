@@ -53,12 +53,32 @@ namespace PFA_FVG_Scanner.Data
             await CreateHistoricalPipelineTablesAsync(connection);
             await CreateWalkForwardValidationTablesAsync(connection);
             await CreateOrderFlowTablesAsync(connection);
+            await CreateSandboxLedgerTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateSandboxLedgerTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS SandboxLedgerEvents
+                (LedgerEventId TEXT PRIMARY KEY,CommandId TEXT NOT NULL,AccountId TEXT NOT NULL,InstanceId TEXT,
+                 Sequence INTEGER NOT NULL,EventType TEXT NOT NULL,OccurredAtUtc TEXT NOT NULL,PayloadJson TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,UNIQUE(AccountId,Sequence),UNIQUE(AccountId,CommandId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE18_SANDBOX_LEDGER_1',datetime('now'),
+                    'Add append-only idempotent virtual-account sandbox ledger; no live broker route.');
+                CREATE INDEX IF NOT EXISTS IX_SandboxLedger_InstanceSequence ON SandboxLedgerEvents(InstanceId,Sequence);
+                CREATE TRIGGER IF NOT EXISTS TR_SandboxLedger_NoUpdate BEFORE UPDATE ON SandboxLedgerEvents
+                    BEGIN SELECT RAISE(ABORT,'Sandbox ledger is append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_SandboxLedger_NoDelete BEFORE DELETE ON SandboxLedgerEvents
+                    BEGIN SELECT RAISE(ABORT,'Sandbox ledger is append-only'); END;
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateOrderFlowTablesAsync(SqliteConnection connection)

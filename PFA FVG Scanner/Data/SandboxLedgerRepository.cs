@@ -1,0 +1,24 @@
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+using PFA_FVG_Scanner.Domain.Sandbox;
+
+namespace PFA_FVG_Scanner.Data;
+
+public sealed class SandboxLedgerRepository
+{
+    private readonly PfaDatabase _database;public SandboxLedgerRepository(PfaDatabase database)=>_database=database;
+    public async Task<IReadOnlyList<SandboxLedgerEvent>> AppendAsync(IReadOnlyList<SandboxLedgerDraft> drafts,CancellationToken token=default)
+    {
+        if(drafts.Count==0)return[];if(drafts.Select(x=>x.AccountId).Distinct(StringComparer.Ordinal).Count()!=1)throw new ArgumentException("One atomic append may target only one sandbox account.");if(drafts.Select(x=>x.CommandId).Distinct(StringComparer.Ordinal).Count()!=drafts.Count)throw new ArgumentException("Every ledger draft requires a unique idempotency key.");
+        var accountId=drafts[0].AccountId;await using var connection=_database.CreateConnection();await connection.OpenAsync(token);await using var transaction=(SqliteTransaction)await connection.BeginTransactionAsync(token);var output=new List<SandboxLedgerEvent>();
+        await using(var max=connection.CreateCommand()){max.Transaction=transaction;max.CommandText="SELECT COALESCE(MAX(Sequence),0) FROM SandboxLedgerEvents WHERE AccountId=$account";Add(max,"$account",accountId);var sequence=Convert.ToInt64(await max.ExecuteScalarAsync(token),CultureInfo.InvariantCulture);
+            foreach(var draft in drafts){await using var existing=connection.CreateCommand();existing.Transaction=transaction;existing.CommandText="SELECT LedgerEventId,CommandId,AccountId,InstanceId,Sequence,EventType,OccurredAtUtc,PayloadJson,ContentHash FROM SandboxLedgerEvents WHERE AccountId=$account AND CommandId=$command";Add(existing,"$account",accountId);Add(existing,"$command",draft.CommandId);await using var reader=await existing.ExecuteReaderAsync(token);if(await reader.ReadAsync(token)){var stored=Read(reader);var proposed=SandboxLedger.Event(draft.CommandId,draft.AccountId,draft.InstanceId,stored.Sequence,draft.EventType,draft.OccurredAtUtc,draft.Payload);if(stored.ContentHash!=proposed.ContentHash)throw new InvalidOperationException("Sandbox command idempotency conflict.");output.Add(stored);continue;}await reader.DisposeAsync();var item=SandboxLedger.Event(draft.CommandId,draft.AccountId,draft.InstanceId,++sequence,draft.EventType,draft.OccurredAtUtc,draft.Payload);await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="INSERT INTO SandboxLedgerEvents(LedgerEventId,CommandId,AccountId,InstanceId,Sequence,EventType,OccurredAtUtc,PayloadJson,ContentHash) VALUES($id,$command,$account,$instance,$sequence,$type,$occurred,$payload,$hash)";Add(command,"$id",item.LedgerEventId);Add(command,"$command",item.CommandId);Add(command,"$account",item.AccountId);Add(command,"$instance",item.InstanceId);Add(command,"$sequence",item.Sequence);Add(command,"$type",item.EventType);Add(command,"$occurred",item.OccurredAtUtc.ToString("O"));Add(command,"$payload",item.PayloadJson);Add(command,"$hash",item.ContentHash);await command.ExecuteNonQueryAsync(token);output.Add(item);}}
+        await transaction.CommitAsync(token);return output;
+    }
+    public async Task<IReadOnlyList<SandboxLedgerEvent>> ReadAccountAsync(string accountId,CancellationToken token=default)
+    {var list=new List<SandboxLedgerEvent>();await using var connection=_database.CreateConnection();await connection.OpenAsync(token);await using var command=connection.CreateCommand();command.CommandText="SELECT LedgerEventId,CommandId,AccountId,InstanceId,Sequence,EventType,OccurredAtUtc,PayloadJson,ContentHash FROM SandboxLedgerEvents WHERE AccountId=$account ORDER BY Sequence";Add(command,"$account",accountId);await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token))list.Add(Read(reader));return list;}
+    public async Task<IReadOnlyList<string>> GetAccountIdsAsync(CancellationToken token=default)
+    {var list=new List<string>();await using var connection=_database.CreateConnection();await connection.OpenAsync(token);await using var command=connection.CreateCommand();command.CommandText="SELECT DISTINCT AccountId FROM SandboxLedgerEvents WHERE EventType='AccountCreated' ORDER BY AccountId";await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token))list.Add(reader.GetString(0));return list;}
+    private static SandboxLedgerEvent Read(SqliteDataReader reader)=>new(reader.GetString(0),reader.GetString(1),reader.GetString(2),reader.IsDBNull(3)?null:reader.GetString(3),reader.GetInt64(4),reader.GetString(5),DateTime.Parse(reader.GetString(6),CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind),reader.GetString(7),reader.GetString(8));
+    private static void Add(SqliteCommand command,string name,object? value)=>command.Parameters.AddWithValue(name,value??DBNull.Value);
+}
