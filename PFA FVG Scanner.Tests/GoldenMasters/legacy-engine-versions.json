@@ -1,0 +1,9 @@
+{
+  "purpose": "Phase 0 records the current discrepancy without choosing an authoritative version.",
+  "observationRepository": "1.0.0",
+  "candidateDiscovery": "1.0.0",
+  "crossDayEvidence": "1.0.0",
+  "outOfSampleValidation": "1.0.0",
+  "historicalReplay": "1.1.0",
+  "mesScenario": "1.1.0"
+}

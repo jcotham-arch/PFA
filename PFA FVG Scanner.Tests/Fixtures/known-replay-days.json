@@ -1,0 +1,44 @@
+[
+  {
+    "fvgId": "30000000-0000-0000-0000-000000000001",
+    "direction": "Bullish",
+    "formationTimeUtc": "2025-01-06T14:00:00Z",
+    "lowerBoundary": 100.0,
+    "upperBoundary": 102.0,
+    "candles": [
+      { "time": "2025-01-06T14:05:00Z", "open": 103, "high": 104, "low": 102, "close": 103 },
+      { "time": "2025-01-06T14:06:00Z", "open": 102, "high": 103, "low": 100, "close": 101 }
+    ],
+    "expectedLifecycle": "FullyFilled",
+    "expectedMinuteCandles": 2,
+    "expectedFullFill": true
+  },
+  {
+    "fvgId": "30000000-0000-0000-0000-000000000002",
+    "direction": "Bearish",
+    "formationTimeUtc": "2025-02-11T15:30:00Z",
+    "lowerBoundary": 98.0,
+    "upperBoundary": 100.0,
+    "candles": [
+      { "time": "2025-02-11T15:35:00Z", "open": 97, "high": 98, "low": 96, "close": 97 },
+      { "time": "2025-02-11T15:36:00Z", "open": 98, "high": 99, "low": 97, "close": 98 }
+    ],
+    "expectedLifecycle": "FiftyPercentFilled",
+    "expectedMinuteCandles": 2,
+    "expectedFullFill": false
+  },
+  {
+    "fvgId": "30000000-0000-0000-0000-000000000003",
+    "direction": "Bullish",
+    "formationTimeUtc": "2025-03-19T13:00:00Z",
+    "lowerBoundary": 100.0,
+    "upperBoundary": 102.0,
+    "candles": [
+      { "time": "2025-03-19T13:05:00Z", "open": 104, "high": 105, "low": 103, "close": 104 },
+      { "time": "2025-03-19T13:06:00Z", "open": 105, "high": 106, "low": 103, "close": 105 }
+    ],
+    "expectedLifecycle": "NoRetracement",
+    "expectedMinuteCandles": 2,
+    "expectedFullFill": false
+  }
+]
