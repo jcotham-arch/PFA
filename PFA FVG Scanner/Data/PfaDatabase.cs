@@ -45,12 +45,83 @@ namespace PFA_FVG_Scanner.Data
             await CreateUniversalPatternReferenceTablesAsync(connection);
             await CreateUniversalMarketRecordTablesAsync(connection);
             await CreateMarketSequenceTablesAsync(connection);
+            await CreateStrategyRegistryTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateStrategyRegistryTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS StrategyDefinitions
+                (
+                    StrategyId TEXT NOT NULL,
+                    StrategyVersion TEXT NOT NULL,
+                    FamilyId TEXT NOT NULL,
+                    DisplayName TEXT NOT NULL,
+                    Environment TEXT NOT NULL,
+                    ContentHash TEXT NOT NULL,
+                    DefinitionJson TEXT NOT NULL,
+                    EngineManifestJson TEXT NOT NULL,
+                    DiscoveryDatasetId TEXT NOT NULL,
+                    ValidationDatasetId TEXT NOT NULL,
+                    Author TEXT NOT NULL,
+                    CompatibilitySource TEXT,
+                    CreatedAtUtc TEXT NOT NULL,
+                    PRIMARY KEY (StrategyId, StrategyVersion)
+                );
+                CREATE TABLE IF NOT EXISTS StrategyRequirements
+                (
+                    StrategyId TEXT NOT NULL,
+                    StrategyVersion TEXT NOT NULL,
+                    RequirementType TEXT NOT NULL,
+                    ReferenceId TEXT NOT NULL,
+                    ReferenceVersion TEXT NOT NULL,
+                    Role TEXT NOT NULL,
+                    IsRequired INTEGER NOT NULL,
+                    PRIMARY KEY (StrategyId, StrategyVersion, RequirementType, ReferenceId, Role),
+                    FOREIGN KEY (StrategyId, StrategyVersion)
+                        REFERENCES StrategyDefinitions(StrategyId, StrategyVersion)
+                );
+                CREATE TABLE IF NOT EXISTS StrategyEvidenceLinks
+                (
+                    StrategyId TEXT NOT NULL,
+                    StrategyVersion TEXT NOT NULL,
+                    EvidenceType TEXT NOT NULL,
+                    EvidenceId TEXT NOT NULL,
+                    DatasetId TEXT NOT NULL,
+                    KnownAtUtc TEXT NOT NULL,
+                    PRIMARY KEY (StrategyId, StrategyVersion, EvidenceType, EvidenceId),
+                    FOREIGN KEY (StrategyId, StrategyVersion)
+                        REFERENCES StrategyDefinitions(StrategyId, StrategyVersion)
+                );
+                CREATE TABLE IF NOT EXISTS StrategyLifecycleEvents
+                (
+                    LifecycleEventId TEXT PRIMARY KEY,
+                    StrategyId TEXT NOT NULL,
+                    StrategyVersion TEXT NOT NULL,
+                    FromStatus TEXT,
+                    ToStatus TEXT NOT NULL,
+                    Reason TEXT NOT NULL,
+                    Actor TEXT NOT NULL,
+                    OccurredAtUtc TEXT NOT NULL,
+                    FOREIGN KEY (StrategyId, StrategyVersion)
+                        REFERENCES StrategyDefinitions(StrategyId, StrategyVersion)
+                );
+                INSERT OR IGNORE INTO CanonicalMigrationJournal
+                    (MigrationId, AppliedAtUtc, Description)
+                VALUES ('PHASE10_STRATEGY_REGISTRY_1', datetime('now'),
+                    'Add immutable strategy versions, requirements, evidence links and guarded lifecycle history.');
+                CREATE INDEX IF NOT EXISTS IX_StrategyDefinitions_Family
+                    ON StrategyDefinitions (FamilyId, StrategyId, StrategyVersion);
+                CREATE INDEX IF NOT EXISTS IX_StrategyLifecycle_StrategyTime
+                    ON StrategyLifecycleEvents (StrategyId, StrategyVersion, OccurredAtUtc);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateMarketSequenceTablesAsync(SqliteConnection connection)
