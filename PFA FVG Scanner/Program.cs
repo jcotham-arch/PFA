@@ -66,6 +66,8 @@ builder.Services.AddSingleton<MarketSequenceRepository>();
 builder.Services.AddSingleton<IStrategyRegistry, StrategyRegistryRepository>();
 builder.Services.AddSingleton<IGeneralResearchRepository, GeneralResearchRepository>();
 builder.Services.AddSingleton<ICrossDayEvidenceRepository, CrossDayEvidenceRepository>();
+builder.Services.AddSingleton<ICrossMarketEvidenceService, CrossMarketEvidenceService>();
+builder.Services.AddSingleton<ICrossMarketEvidenceRepository, CrossMarketEvidenceRepository>();
 
 // Additive Phase 1 foundations. Legacy consumers remain unchanged until
 // compatibility parity is established by later migration phases.

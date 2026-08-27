@@ -48,12 +48,40 @@ namespace PFA_FVG_Scanner.Data
             await CreateStrategyRegistryTablesAsync(connection);
             await CreateGeneralResearchTablesAsync(connection);
             await CreateGeneralCrossDayEvidenceTablesAsync(connection);
+            await CreateCrossMarketEvidenceTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateCrossMarketEvidenceTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS CrossMarketEvidenceResults
+                (ResultId TEXT PRIMARY KEY,PlanId TEXT NOT NULL,PlanVersion TEXT NOT NULL,FrozenSignature TEXT NOT NULL,
+                 SourceInstrumentId TEXT NOT NULL,DatasetManifestId TEXT NOT NULL,Classification TEXT NOT NULL,
+                 ComparableMarkets INTEGER NOT NULL,PositiveComparableMarkets INTEGER NOT NULL,
+                 NegativeComparableMarkets INTEGER NOT NULL,Summary TEXT NOT NULL,PlanJson TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 InvalidatesSourceHypothesis INTEGER NOT NULL CHECK(InvalidatesSourceHypothesis=0),
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0));
+                CREATE TABLE IF NOT EXISTS CrossMarketInstrumentEvidence
+                (ResultId TEXT NOT NULL,InstrumentId TEXT NOT NULL,Comparability TEXT NOT NULL,
+                 ComparabilityNotesJson TEXT NOT NULL,Samples INTEGER NOT NULL,IndependentEvents INTEGER NOT NULL,
+                 ExpectancyR TEXT NOT NULL,NetR TEXT NOT NULL,AverageMovePoints TEXT NOT NULL,
+                 AverageMoveTicks TEXT,AverageMoveDollarsPerContract TEXT,InstrumentDefinitionVersion TEXT NOT NULL,
+                 EvidenceReference TEXT NOT NULL,PRIMARY KEY(ResultId,InstrumentId),
+                 FOREIGN KEY(ResultId) REFERENCES CrossMarketEvidenceResults(ResultId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE13_CROSS_MARKET_EVIDENCE_1',datetime('now'),
+                    'Add immutable cross-market plans, normalized per-instrument evidence and comparability notes.');
+                CREATE INDEX IF NOT EXISTS IX_CrossMarketEvidence_Signature
+                    ON CrossMarketEvidenceResults(FrozenSignature,CreatedAtUtc);
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateGeneralCrossDayEvidenceTablesAsync(SqliteConnection connection)
