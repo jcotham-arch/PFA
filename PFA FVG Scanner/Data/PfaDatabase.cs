@@ -52,12 +52,49 @@ namespace PFA_FVG_Scanner.Data
             await CreateExecutionAmbiguityTablesAsync(connection);
             await CreateHistoricalPipelineTablesAsync(connection);
             await CreateWalkForwardValidationTablesAsync(connection);
+            await CreateOrderFlowTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateOrderFlowTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS OrderFlowEvents
+                (CanonicalEventId TEXT PRIMARY KEY,Provider TEXT NOT NULL,ProviderEventId TEXT NOT NULL,
+                 InstrumentId TEXT NOT NULL,ContractId TEXT,ProviderSymbol TEXT NOT NULL,EventKind TEXT NOT NULL,
+                 EventTimeUtc TEXT NOT NULL,KnownAtUtc TEXT NOT NULL,ProviderSequence INTEGER,Operation TEXT NOT NULL,
+                 SupersedesCanonicalEventId TEXT,QualityFlags INTEGER NOT NULL,ContentHash TEXT NOT NULL,EventJson TEXT NOT NULL,
+                 UNIQUE(Provider,ProviderEventId));
+                CREATE TABLE IF NOT EXISTS OrderFlowClassifiedTrades
+                (CanonicalEventId TEXT NOT NULL,ClassifierVersion TEXT NOT NULL,DataRevision TEXT NOT NULL,
+                 EventTimeUtc TEXT NOT NULL,KnownAtUtc TEXT NOT NULL,Side TEXT NOT NULL,TradeJson TEXT NOT NULL,
+                 PRIMARY KEY(CanonicalEventId,ClassifierVersion,DataRevision),FOREIGN KEY(CanonicalEventId) REFERENCES OrderFlowEvents(CanonicalEventId));
+                CREATE TABLE IF NOT EXISTS OrderFlowFeatureSnapshots
+                (SnapshotId TEXT PRIMARY KEY,InstrumentId TEXT NOT NULL,ContractId TEXT,WindowStartUtc TEXT NOT NULL,
+                 WindowEndUtc TEXT NOT NULL,KnownAtUtc TEXT NOT NULL,TradingSessionId TEXT NOT NULL,FeatureSetVersion TEXT NOT NULL,
+                 DataRevision TEXT NOT NULL,ContentHash TEXT NOT NULL,SnapshotJson TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS OrderFlowRetentionPolicies
+                (PolicyVersion TEXT PRIMARY KEY,RawEventRetentionDays INTEGER NOT NULL,FeatureRetentionDays INTEGER NOT NULL,
+                 AutomaticDeletionEnabled INTEGER NOT NULL CHECK(AutomaticDeletionEnabled=0),CreatedAtUtc TEXT NOT NULL);
+                INSERT OR IGNORE INTO OrderFlowRetentionPolicies VALUES('retain-until-source-selected-1.0.0',365,730,0,datetime('now'));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE17_ORDER_FLOW_1',datetime('now'),
+                    'Add isolated append-only order-flow events, classifications, feature snapshots and disabled retention policy.');
+                CREATE INDEX IF NOT EXISTS IX_OrderFlowEvents_InstrumentTime ON OrderFlowEvents(InstrumentId,EventTimeUtc,KnownAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_OrderFlowSnapshots_InstrumentWindow ON OrderFlowFeatureSnapshots(InstrumentId,WindowStartUtc,WindowEndUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_OrderFlowEvents_NoUpdate BEFORE UPDATE ON OrderFlowEvents BEGIN SELECT RAISE(ABORT,'Order-flow events are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_OrderFlowEvents_NoDelete BEFORE DELETE ON OrderFlowEvents BEGIN SELECT RAISE(ABORT,'Order-flow events are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_OrderFlowTrades_NoUpdate BEFORE UPDATE ON OrderFlowClassifiedTrades BEGIN SELECT RAISE(ABORT,'Order-flow classifications are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_OrderFlowTrades_NoDelete BEFORE DELETE ON OrderFlowClassifiedTrades BEGIN SELECT RAISE(ABORT,'Order-flow classifications are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_OrderFlowSnapshots_NoUpdate BEFORE UPDATE ON OrderFlowFeatureSnapshots BEGIN SELECT RAISE(ABORT,'Order-flow snapshots are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_OrderFlowSnapshots_NoDelete BEFORE DELETE ON OrderFlowFeatureSnapshots BEGIN SELECT RAISE(ABORT,'Order-flow snapshots are immutable'); END;
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateWalkForwardValidationTablesAsync(SqliteConnection connection)
