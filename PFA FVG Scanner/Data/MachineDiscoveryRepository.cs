@@ -1,0 +1,23 @@
+using System.Globalization;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using PFA_FVG_Scanner.Domain.Discovery;
+using PFA_FVG_Scanner.Domain.Research;
+
+namespace PFA_FVG_Scanner.Data;
+
+public sealed class MachineDiscoveryRepository(PfaDatabase database,IGeneralResearchRepository researchRepository):IMachineDiscoveryRepository
+{
+    public async Task SaveAsync(MachineDiscoveryResult result,CancellationToken cancellationToken=default)
+    {
+        ArgumentNullException.ThrowIfNull(result);if(result.CanActivateStrategy||result.ResearchRun.CanActivateStrategy||result.ResearchRun.Hypotheses.Any(x=>x.CanActivateStrategy))throw new UnauthorizedAccessException("Machine discovery is research-only.");
+        if(result.Clusters.Count!=result.Manifest.ClusterCount||result.ResearchRun.Hypotheses.Count!=result.Manifest.ClusterCount)throw new InvalidOperationException("Every declared cluster must be retained.");
+        await using var connection=database.CreateConnection();await connection.OpenAsync(cancellationToken);await using var tx=(SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using(var check=connection.CreateCommand()){check.Transaction=tx;check.CommandText="SELECT ContentHash FROM MachineDiscoveryRuns WHERE RunId=$id";Add(check,"$id",result.Manifest.RunId);var found=await check.ExecuteScalarAsync(cancellationToken);if(found is not null&&Convert.ToString(found,CultureInfo.InvariantCulture)!=result.ContentHash())throw new InvalidOperationException("Machine discovery runs are immutable; use a new RunId.");if(found is not null){await tx.RollbackAsync(cancellationToken);return;}}
+        await using(var command=connection.CreateCommand()){command.Transaction=tx;command.CommandText="INSERT INTO MachineDiscoveryRuns(RunId,ModelId,EngineVersion,ModelVersion,DatasetId,DataRevision,RandomSeed,MultipleComparisonMethod,ManifestHash,InputContentHash,ContentHash,ManifestJson,ResultJson,CreatedAtUtc,CanActivateStrategy) VALUES($run,$model,$engine,$version,$dataset,$revision,$seed,$method,$manifestHash,$inputHash,$hash,$manifest,$result,$created,0)";Add(command,"$run",result.Manifest.RunId);Add(command,"$model",result.ModelId);Add(command,"$engine",result.Manifest.EngineVersion);Add(command,"$version",result.Manifest.ModelVersion);Add(command,"$dataset",result.Manifest.Dataset.DatasetId);Add(command,"$revision",result.Manifest.Dataset.DataRevision);Add(command,"$seed",result.Manifest.RandomSeed);Add(command,"$method",result.Manifest.MultipleComparisonMethod);Add(command,"$manifestHash",result.ManifestHash);Add(command,"$inputHash",result.InputContentHash);Add(command,"$hash",result.ContentHash());Add(command,"$manifest",JsonSerializer.Serialize(result.Manifest));Add(command,"$result",JsonSerializer.Serialize(result));Add(command,"$created",result.Manifest.AsOfUtc.ToUniversalTime().ToString("O"));await command.ExecuteNonQueryAsync(cancellationToken);}
+        foreach(var cluster in result.Clusters){await using var command=connection.CreateCommand();command.Transaction=tx;command.CommandText="INSERT INTO MachineFeatureClusters(RunId,ClusterId,Ordinal,TrainingSamples,EvaluationSamples,RawPValue,AdjustedPValue,ContentHash,ClusterJson,CanActivateStrategy) VALUES($run,$cluster,$ordinal,$train,$eval,$raw,$adjusted,$hash,$json,0)";Add(command,"$run",result.Manifest.RunId);Add(command,"$cluster",cluster.ClusterId);Add(command,"$ordinal",cluster.Ordinal);Add(command,"$train",cluster.TrainingSamples);Add(command,"$eval",cluster.EvaluationSamples);Add(command,"$raw",cluster.RawPValue.ToString(CultureInfo.InvariantCulture));Add(command,"$adjusted",cluster.AdjustedPValue.ToString(CultureInfo.InvariantCulture));Add(command,"$hash",cluster.ContentHash);Add(command,"$json",JsonSerializer.Serialize(cluster));await command.ExecuteNonQueryAsync(cancellationToken);}
+        await tx.CommitAsync(cancellationToken);await researchRepository.SaveAsync(result.ResearchRun,cancellationToken);
+    }
+    public async Task<MachineDiscoveryResult?> FindAsync(string runId,CancellationToken cancellationToken=default){await using var connection=database.CreateConnection();await connection.OpenAsync(cancellationToken);await using var command=connection.CreateCommand();command.CommandText="SELECT ResultJson FROM MachineDiscoveryRuns WHERE RunId=$id";Add(command,"$id",runId);var value=await command.ExecuteScalarAsync(cancellationToken);return value is null?null:JsonSerializer.Deserialize<MachineDiscoveryResult>((string)value);}
+    private static void Add(SqliteCommand command,string name,object? value)=>command.Parameters.AddWithValue(name,value??DBNull.Value);
+}

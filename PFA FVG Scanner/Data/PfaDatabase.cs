@@ -56,12 +56,39 @@ namespace PFA_FVG_Scanner.Data
             await CreateSandboxLedgerTablesAsync(connection);
             await CreateGovernanceTablesAsync(connection);
             await CreateForwardCampaignTablesAsync(connection);
+            await CreateMachineDiscoveryTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateMachineDiscoveryTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS MachineDiscoveryRuns
+                (RunId TEXT PRIMARY KEY,ModelId TEXT NOT NULL,EngineVersion TEXT NOT NULL,ModelVersion TEXT NOT NULL,
+                 DatasetId TEXT NOT NULL,DataRevision TEXT NOT NULL,RandomSeed INTEGER NOT NULL,
+                 MultipleComparisonMethod TEXT NOT NULL,ManifestHash TEXT NOT NULL,InputContentHash TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,ManifestJson TEXT NOT NULL,ResultJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0));
+                CREATE TABLE IF NOT EXISTS MachineFeatureClusters
+                (RunId TEXT NOT NULL,ClusterId TEXT NOT NULL,Ordinal INTEGER NOT NULL,TrainingSamples INTEGER NOT NULL,
+                 EvaluationSamples INTEGER NOT NULL,RawPValue TEXT NOT NULL,AdjustedPValue TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,ClusterJson TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),PRIMARY KEY(RunId,ClusterId),
+                 FOREIGN KEY(RunId) REFERENCES MachineDiscoveryRuns(RunId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE21_MACHINE_DISCOVERY_1',datetime('now'),'Add immutable reproducible research-only machine discovery runs and feature-cluster hypotheses.');
+                CREATE INDEX IF NOT EXISTS IX_MachineDiscovery_Dataset ON MachineDiscoveryRuns(DatasetId,DataRevision,CreatedAtUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_MachineDiscoveryRuns_NoUpdate BEFORE UPDATE ON MachineDiscoveryRuns BEGIN SELECT RAISE(ABORT,'Machine discovery runs are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_MachineDiscoveryRuns_NoDelete BEFORE DELETE ON MachineDiscoveryRuns BEGIN SELECT RAISE(ABORT,'Machine discovery runs are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_MachineFeatureClusters_NoUpdate BEFORE UPDATE ON MachineFeatureClusters BEGIN SELECT RAISE(ABORT,'Machine feature clusters are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_MachineFeatureClusters_NoDelete BEFORE DELETE ON MachineFeatureClusters BEGIN SELECT RAISE(ABORT,'Machine feature clusters are immutable'); END;
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateForwardCampaignTablesAsync(SqliteConnection connection)
