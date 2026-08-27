@@ -51,12 +51,57 @@ namespace PFA_FVG_Scanner.Data
             await CreateCrossMarketEvidenceTablesAsync(connection);
             await CreateExecutionAmbiguityTablesAsync(connection);
             await CreateHistoricalPipelineTablesAsync(connection);
+            await CreateWalkForwardValidationTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateWalkForwardValidationTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS WalkForwardPlans
+                (PlanId TEXT PRIMARY KEY,PlanVersion TEXT NOT NULL,FrozenSignature TEXT NOT NULL,FrozenParameterHash TEXT NOT NULL,
+                 DatasetId TEXT NOT NULL,DataRevision TEXT NOT NULL,PlanJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS WalkForwardFolds
+                (PlanId TEXT NOT NULL,FoldId TEXT NOT NULL,Ordinal INTEGER NOT NULL,TrainingStartUtc TEXT NOT NULL,
+                 TrainingEndUtc TEXT NOT NULL,ValidationStartUtc TEXT NOT NULL,ValidationEndUtc TEXT NOT NULL,
+                 DatasetId TEXT NOT NULL,DataRevision TEXT NOT NULL,PRIMARY KEY(PlanId,FoldId),FOREIGN KEY(PlanId) REFERENCES WalkForwardPlans(PlanId));
+                CREATE TABLE IF NOT EXISTS WalkForwardReports
+                (ReportId TEXT PRIMARY KEY,PlanId TEXT NOT NULL UNIQUE,Status TEXT NOT NULL,ContentHash TEXT NOT NULL,
+                 ReportJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 FOREIGN KEY(PlanId) REFERENCES WalkForwardPlans(PlanId));
+                CREATE TABLE IF NOT EXISTS WalkForwardFoldResults
+                (ReportId TEXT NOT NULL,FoldId TEXT NOT NULL,Status TEXT NOT NULL,Samples INTEGER NOT NULL,
+                 IndependentEvents INTEGER NOT NULL,ExpectancyR TEXT NOT NULL,ProfitFactor TEXT NOT NULL,
+                 MaximumDrawdownR TEXT NOT NULL,ObservationContentHash TEXT NOT NULL,ParameterDriftDetected INTEGER NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),PRIMARY KEY(ReportId,FoldId),
+                 FOREIGN KEY(ReportId) REFERENCES WalkForwardReports(ReportId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE16_WALK_FORWARD_1',datetime('now'),
+                    'Add immutable non-overlapping walk-forward fold plans, results and non-activation enforcement.');
+                CREATE INDEX IF NOT EXISTS IX_WalkForward_DatasetRevision ON WalkForwardPlans(DatasetId,DataRevision);
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardPlans_NoUpdate BEFORE UPDATE ON WalkForwardPlans
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward plans are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardPlans_NoDelete BEFORE DELETE ON WalkForwardPlans
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward plans are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardFolds_NoUpdate BEFORE UPDATE ON WalkForwardFolds
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward folds are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardFolds_NoDelete BEFORE DELETE ON WalkForwardFolds
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward folds are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardReports_NoUpdate BEFORE UPDATE ON WalkForwardReports
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward reports are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardReports_NoDelete BEFORE DELETE ON WalkForwardReports
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward reports are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardFoldResults_NoUpdate BEFORE UPDATE ON WalkForwardFoldResults
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward fold results are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_WalkForwardFoldResults_NoDelete BEFORE DELETE ON WalkForwardFoldResults
+                    BEGIN SELECT RAISE(ABORT,'Walk-forward fold results are immutable'); END;
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateHistoricalPipelineTablesAsync(SqliteConnection connection)
