@@ -29,7 +29,7 @@ The full drawing and indicator workbench—rectangles, lines, custom indicators,
 
 Every universal detector declares a stable module ID, version, and supported resolution. Detection receives an explicit point-in-time canonical context. The contract rejects future bars, unsupported resolutions, incomplete/invalid data, unresolved instruments, and provider conflicts.
 
-FVG remains the preserved legacy operational module in Phase 4. Its algorithms are not rewritten. Phase 5 adds the compatibility adapter and universal observations.
+FVG is Pattern Module #1. Phase 5 maps canonical bars into the preserved legacy detector and maps its result back into a source-linked universal observation. Its algorithms are not rewritten.
 
 ## Research and evidence
 

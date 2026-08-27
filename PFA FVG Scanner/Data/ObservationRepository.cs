@@ -147,6 +147,17 @@ namespace PFA_FVG_Scanner.Data
                 DateTime.UtcNow.ToString("O"));
 
             command.ExecuteNonQuery();
+
+            using SqliteCommand universalCommand = connection.CreateCommand();
+            universalCommand.CommandText = """
+                INSERT OR IGNORE INTO UniversalPatternObservationReferences
+                    (PatternObservationId, ModuleId, ModuleVersion, PatternType,
+                     LegacyObservationId, CreatedAtUtc)
+                VALUES ($id, 'fvg', 'legacy-1.0.0', 'FairValueGap', $id, $createdAtUtc);
+                """;
+            universalCommand.Parameters.AddWithValue("$id", observationId);
+            universalCommand.Parameters.AddWithValue("$createdAtUtc", DateTime.UtcNow.ToString("O"));
+            universalCommand.ExecuteNonQuery();
         }
 
         public async Task<int> DeleteFvgsInMarketWindowAsync(
@@ -194,8 +205,29 @@ namespace PFA_FVG_Scanner.Data
             await connection.OpenAsync(
                 cancellationToken);
 
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+            await using SqliteCommand referenceCommand = connection.CreateCommand();
+            referenceCommand.Transaction = transaction;
+            referenceCommand.CommandText = """
+                DELETE FROM UniversalPatternObservationReferences
+                WHERE LegacyObservationId IN
+                (
+                    SELECT ObservationId FROM Observations
+                    WHERE ObservationType = 'FVG' AND Symbol = $symbol AND Timeframe = $timeframe
+                        AND MarketTimeUtc >= $startUtc AND MarketTimeUtc <= $endUtc
+                );
+                """;
+            referenceCommand.Parameters.AddWithValue("$symbol", symbol);
+            referenceCommand.Parameters.AddWithValue("$timeframe", timeframe);
+            referenceCommand.Parameters.AddWithValue("$startUtc", startUtc.ToString("O"));
+            referenceCommand.Parameters.AddWithValue("$endUtc", endUtc.ToString("O"));
+            await referenceCommand.ExecuteNonQueryAsync(cancellationToken);
+
             await using SqliteCommand command =
                 connection.CreateCommand();
+            command.Transaction = transaction;
 
             command.CommandText = """
                 DELETE FROM Observations
@@ -223,8 +255,9 @@ namespace PFA_FVG_Scanner.Data
                 "$endUtc",
                 endUtc.ToString("O"));
 
-            return await command.ExecuteNonQueryAsync(
-                cancellationToken);
+            int deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return deleted;
         }
 
         public async Task<int> GetFvgCountAsync(

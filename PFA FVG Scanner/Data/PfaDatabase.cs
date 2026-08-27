@@ -42,12 +42,43 @@ namespace PFA_FVG_Scanner.Data
             await CreateExperimentsTableAsync(connection);
             await CreateCanonicalTimelineTablesAsync(connection);
             await CreateFeatureStateTablesAsync(connection);
+            await CreateUniversalPatternReferenceTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateUniversalPatternReferenceTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS UniversalPatternObservationReferences
+                (
+                    PatternObservationId TEXT PRIMARY KEY,
+                    ModuleId TEXT NOT NULL,
+                    ModuleVersion TEXT NOT NULL,
+                    PatternType TEXT NOT NULL,
+                    LegacyObservationId TEXT NOT NULL UNIQUE,
+                    CreatedAtUtc TEXT NOT NULL,
+                    FOREIGN KEY (LegacyObservationId) REFERENCES Observations(ObservationId)
+                );
+                INSERT OR IGNORE INTO UniversalPatternObservationReferences
+                    (PatternObservationId, ModuleId, ModuleVersion, PatternType,
+                     LegacyObservationId, CreatedAtUtc)
+                SELECT ObservationId, 'fvg', 'legacy-1.0.0', 'FairValueGap',
+                       ObservationId, datetime('now')
+                FROM Observations
+                WHERE ObservationType = 'FVG';
+                INSERT OR IGNORE INTO CanonicalMigrationJournal
+                    (MigrationId, AppliedAtUtc, Description)
+                VALUES ('PHASE5_FVG_PATTERN_MODULE_1', datetime('now'),
+                    'Additive universal pattern references for preserved legacy FVG observations.');
+                CREATE INDEX IF NOT EXISTS IX_UniversalPatternReferences_Module
+                    ON UniversalPatternObservationReferences (ModuleId, ModuleVersion);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateFeatureStateTablesAsync(SqliteConnection connection)

@@ -32,7 +32,31 @@ public sealed class PhaseOneFoundationTests
         var registry = new InstrumentDefinitionRegistry();
         Assert.Null(registry.Find("mes", new DateOnly(2026, 8, 26)));
         Assert.Equal("MES", registry.Find("mes", new DateOnly(2026, 8, 27))!.InstrumentId);
-        Assert.Equal(6, registry.GetAll().Count);
+        Assert.Equal(17, registry.GetAll().Count);
+    }
+
+    [Theory]
+    [InlineData("SI", 0.005, 5000, 25)]
+    [InlineData("6B", 0.0001, 62500, 6.25)]
+    [InlineData("6J", 0.0000005, 12500000, 6.25)]
+    [InlineData("6A", 0.0001, 100000, 10)]
+    [InlineData("MYM", 1, 0.5, 0.5)]
+    [InlineData("M2K", 0.1, 5, 0.5)]
+    [InlineData("HG", 0.0005, 25000, 12.5)]
+    [InlineData("NG", 0.001, 10000, 10)]
+    [InlineData("ZC", 0.25, 50, 12.5)]
+    [InlineData("ZW", 0.25, 50, 12.5)]
+    [InlineData("ZS", 0.25, 50, 12.5)]
+    public void ExpandedResearchUniverseHasReviewedEconomics(
+        string root, decimal tick, decimal pointValue, decimal tickValue)
+    {
+        var definition = new InstrumentDefinitionRegistry().Find(root, new DateOnly(2026, 8, 27));
+        Assert.NotNull(definition);
+        Assert.Equal(tick, definition.TickSize);
+        Assert.Equal(pointValue, definition.PointValue);
+        Assert.Equal(tickValue, definition.TickValue);
+        Assert.Equal("1.1.0", definition.DefinitionVersion);
+        Assert.StartsWith("https://www.cmegroup.com/", definition.SpecificationSource);
     }
 
     [Fact]

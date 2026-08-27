@@ -4,10 +4,10 @@ public sealed class MarketPatternModuleRegistry : IMarketPatternModuleRegistry
 {
     private static readonly IReadOnlyList<PatternModuleDefinition> Definitions =
     [
-        new("fvg", "Fair Value Gaps", "legacy-compatibility",
+        new("fvg", "Fair Value Gaps", "legacy-1.0.0",
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "5m" },
-            "Legacy operational · universal adapter scheduled for Phase 5",
-            "Existing FVG detection, lifecycle, replay, scenario and evidence behavior is preserved unchanged.")
+            "Universal adapter active · legacy algorithms preserved",
+            "Pattern Module #1 maps canonical bars through the unchanged legacy FVG detector.")
     ];
 
     public IReadOnlyList<PatternModuleDefinition> GetAll() => Definitions;

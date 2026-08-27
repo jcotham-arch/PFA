@@ -6,7 +6,8 @@ public enum AssetClass
     Metal,
     Energy,
     InterestRate,
-    ForeignExchange
+    ForeignExchange,
+    Agriculture
 }
 
 public sealed record InstrumentDefinition(

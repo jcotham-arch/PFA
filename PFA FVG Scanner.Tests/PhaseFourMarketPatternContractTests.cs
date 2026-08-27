@@ -57,7 +57,7 @@ public sealed class PhaseFourMarketPatternContractTests
     {
         var module = Assert.Single(new MarketPatternModuleRegistry().GetAll());
         Assert.Equal("fvg", module.ModuleId);
-        Assert.Contains("Phase 5", module.Maturity);
+        Assert.Contains("adapter active", module.Maturity, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
