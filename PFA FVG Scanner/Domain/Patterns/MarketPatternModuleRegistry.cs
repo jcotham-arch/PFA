@@ -14,8 +14,8 @@ public sealed class MarketPatternModuleRegistry : IMarketPatternModuleRegistry
             "Point-in-time prior-level penetration with explicit reclaim, continuation, depth and equal-level facts."),
         Planned("market-structure", "Market Structure", "Swing points, trend state, structure breaks and directional transitions."),
         Planned("displacement", "Displacement", "Range expansion and directional impulse with point-in-time confirmation."),
-        Planned("range-breakout", "Range Breakouts", "Versioned range formation, acceptance, rejection and continuation."),
-        Planned("failed-breakout", "Failed Breakouts", "Break, failure and reclaim behavior without optimistic hindsight."),
+        Active("range-breakout", "Range Breakouts", "Prior-range penetration with a completed close beyond the boundary."),
+        Active("failed-breakout", "Failed Breakouts", "Prior-range penetration followed by a completed close back inside."),
         Planned("session-reference", "Session References", "Prior session levels, opening ranges and session-transition events."),
         Planned("volume-volatility", "Volume & Volatility", "Volume anomalies, compression, expansion and regime context.")
     ];
@@ -29,4 +29,9 @@ public sealed class MarketPatternModuleRegistry : IMarketPatternModuleRegistry
         new(id, name, "definition-pending",
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "1m", "5m", "15m", "1h" },
             "Planned · detector not active · no evidence emitted", description);
+
+    private static PatternModuleDefinition Active(string id, string name, string description) =>
+        new(id, name, "capture-1.0.0",
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "1m", "5m", "15m", "1h" },
+            "Capture/Research active · no strategy judgment", description);
 }

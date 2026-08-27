@@ -56,9 +56,9 @@ public sealed class PhaseFourMarketPatternContractTests
     public void ModuleInventoryDocumentsLegacyBoundaryWithoutWrappingItEarly()
     {
         var modules = new MarketPatternModuleRegistry().GetAll();
-        Assert.Equal(new[] { "fvg", "liquidity-sweep" },
+        Assert.Equal(new[] { "fvg", "liquidity-sweep", "range-breakout", "failed-breakout" },
             modules.Where(x => x.Version != "definition-pending").Select(x => x.ModuleId));
-        Assert.Equal(6, modules.Count(x => x.Version == "definition-pending"));
+        Assert.Equal(4, modules.Count(x => x.Version == "definition-pending"));
     }
 
     [Theory]
