@@ -106,6 +106,7 @@ builder.Services.AddSingleton<FailedBreakoutPatternModule>();
 builder.Services.AddSingleton<MarketChartService>();
 builder.Services.AddSingleton<IMarketSequenceDefinitionRegistry, MarketSequenceDefinitionRegistry>();
 builder.Services.AddSingleton<IMarketSequenceEngine, MarketSequenceEngine>();
+builder.Services.AddSingleton<PatternSequenceReplayService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES

@@ -55,6 +55,34 @@ public sealed class CanonicalTimelineRepository
         return await GetRevisionsAsync(connection, null, canonicalBarId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<CanonicalBar>> GetCurrentBarsAsync(string instrumentId,
+        string timeframe, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT b.CanonicalBarId, b.Revision, b.InstrumentId, b.ContractId, b.ProviderSymbol,
+                   b.Timeframe, b.OpenTimeUtc, b.CloseTimeUtc, b.Open, b.High, b.Low, b.Close,
+                   b.Volume, b.IsComplete, b.TradingSessionId, b.TradingDate,
+                   b.CanonicalizationVersion, b.TransformationVersion, b.CorrectionState,
+                   b.QualityFlags, b.RevisionEffectiveUtc, b.ContentHash
+            FROM CanonicalBars b
+            INNER JOIN (
+                SELECT CanonicalBarId, MAX(Revision) Revision
+                FROM CanonicalBars GROUP BY CanonicalBarId
+            ) latest ON latest.CanonicalBarId=b.CanonicalBarId AND latest.Revision=b.Revision
+            WHERE b.InstrumentId=$instrument AND b.Timeframe=$timeframe AND b.IsComplete=1
+            ORDER BY b.OpenTimeUtc;
+            """;
+        command.Parameters.AddWithValue("$instrument", instrumentId.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("$timeframe", timeframe.Trim().ToLowerInvariant());
+        var result = new List<CanonicalBar>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) result.Add(ReadBar(reader));
+        return result;
+    }
+
     private static async Task<List<CanonicalBar>> GetRevisionsAsync(SqliteConnection connection,
         SqliteTransaction? transaction, string id, CancellationToken token)
     {

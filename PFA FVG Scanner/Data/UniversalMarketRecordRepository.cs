@@ -170,6 +170,17 @@ public sealed class UniversalMarketRecordRepository
             MarketDataQualityFlags.None, StableHash(payload));
     }
 
+    public static UniversalMarketObservation FromPattern(MarketPatternObservation observation)
+    {
+        var payload = JsonSerializer.Serialize(observation.Geometry, observation.Geometry.GetType());
+        return new(observation.ObservationId, 1, observation.ModuleId, observation.ModuleVersion,
+            observation.PatternType, observation.InstrumentId, observation.ContractId,
+            observation.Timeframe, observation.Direction, Utc(observation.FormationTimeUtc),
+            Utc(observation.KnownAtUtc), observation.LifecycleState,
+            $"pfa.{observation.ModuleId}.observation/1.0", payload,
+            observation.SourceCanonicalBarIds, observation.QualityFlags, StableHash(payload));
+    }
+
     public static UniversalMarketOutcome FromFvgOutcome(FvgOutcome outcome)
     {
         var fvg = new FairValueGap { Symbol = outcome.Symbol, Timeframe = outcome.Timeframe,
