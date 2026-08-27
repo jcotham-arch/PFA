@@ -1,0 +1,647 @@
+@PFA_FVG_Scanner_HostAddress = https://localhost:7034
+
+### ============================================================
+### PFA FVG SCANNER
+### LIVE STATUS + DATABASE + GAP REPAIR + BACKFILL
+### + HISTORICAL RESEARCH + OUT-OF-SAMPLE VALIDATION
+### + CROSS-DAY EVIDENCE
+### ============================================================
+
+
+### ============================================================
+### LIVE MARKET DATA
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 1. CHECK ACTIVE PROVIDER / MASSIVE STATUS
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketData/status
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 2. CHECK WATCHDOG HEALTH
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataHealth
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 3. VIEW LAST RAW MASSIVE MESSAGE
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MassiveDebug/raw
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 4. CHECK CURRENT IN-MEMORY 5-MINUTE CANDLES
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/Candle/MESU6/5m
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 5. VIEW CURRENT DETECTED FVGs
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/Fvg
+Accept: application/json
+
+
+### ============================================================
+### SQLITE DATABASE
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 6. CHECK DATABASE FILE
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/Database/info
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 7. READ SAVED 5-MINUTE CANDLES
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/Database/candles/MESU6/5m?limit=300
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 8. COUNT RAW MASSIVE EVENTS
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/Database/raw/count
+Accept: application/json
+
+
+### ============================================================
+### ORIGINAL MORNING TEST WINDOW
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 9. AUDIT ORIGINAL MORNING WINDOW
+###
+### 7:20 AM Central = 12:20 UTC
+### 7:45 AM Central = 12:45 UTC
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T12:45:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 10. BACKFILL ORIGINAL MORNING WINDOW
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T12:45:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 11. FULL REBUILD ORIGINAL MORNING WINDOW
+###
+### DIAGNOSTIC OUTPUT ONLY
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/HistoricalCandleRebuild/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T12:45:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 12. COMPACT RESEARCH SUMMARY - ORIGINAL MORNING WINDOW
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T12:45:00Z&top=10
+Accept: application/json
+
+
+### ============================================================
+### EXTENDED MORNING RESEARCH WINDOW
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 13. AUDIT 7:20 AM - 9:00 AM CENTRAL
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T14:00:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 14. BACKFILL 7:20 AM - 9:00 AM CENTRAL
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T14:00:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 15. FULL REBUILD 7:20 AM - 9:00 AM CENTRAL
+###
+### DIAGNOSTIC OUTPUT ONLY
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/HistoricalCandleRebuild/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T14:00:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 16. COMPACT RESEARCH SUMMARY - 7:20 AM - 9:00 AM
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-26T12:20:00Z&endUtc=2026-08-26T14:00:00Z&top=10
+Accept: application/json
+
+
+### ============================================================
+### FVG QUALIFICATION TEST
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 17. TEST 7:35 AM CENTRAL BEARISH FVG
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/FvgQualification/historical?symbol=MESU6&formationTimeUtc=2026-08-26T12:35:00Z&direction=Bearish&lowerBoundary=7684.25&upperBoundary=7691.00&endUtc=2026-08-26T14:00:00Z
+Accept: application/json
+
+
+### ============================================================
+### AUGUST 26 DISCOVERY DATASET
+###
+### THIS IS THE DATASET THAT DISCOVERED:
+###
+### BoundaryTouch + 1R
+###
+### DO NOT INCLUDE AUGUST 26 IN VALIDATION.
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 18. AUDIT AUGUST 26 DISCOVERY WINDOW
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-26T14:00:00Z&endUtc=2026-08-26T23:44:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 19. BACKFILL AUGUST 26 DISCOVERY WINDOW
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-26T14:00:00Z&endUtc=2026-08-26T23:44:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 20. VERIFY AUGUST 26 DISCOVERY WINDOW
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-26T14:00:00Z&endUtc=2026-08-26T23:44:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 21. FULL AUGUST 26 HISTORICAL REBUILD
+###
+### DIAGNOSTIC OUTPUT ONLY
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/HistoricalCandleRebuild/MESU6?startUtc=2026-08-26T14:00:00Z&endUtc=2026-08-26T23:44:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 22. PRIMARY AUGUST 26 COMPACT RESEARCH SUMMARY
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-26T14:00:00Z&endUtc=2026-08-26T23:44:00Z&top=10
+Accept: application/json
+
+
+### ============================================================
+### OUT-OF-SAMPLE VALIDATION DATASET
+###
+### AUGUST 19, 2026 THROUGH AUGUST 25, 2026
+###
+### AUGUST 26 IS EXCLUDED.
+### ============================================================
+
+
+### ============================================================
+### AUGUST 19, 2026
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 23. AUDIT AUGUST 19
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-19T00:00:00Z&endUtc=2026-08-19T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 24. BACKFILL AUGUST 19
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-19T00:00:00Z&endUtc=2026-08-19T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 25. VERIFY AUGUST 19
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-19T00:00:00Z&endUtc=2026-08-19T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### AUGUST 20, 2026
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 26. AUDIT AUGUST 20
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-20T00:00:00Z&endUtc=2026-08-20T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 27. BACKFILL AUGUST 20
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-20T00:00:00Z&endUtc=2026-08-20T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 28. VERIFY AUGUST 20
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-20T00:00:00Z&endUtc=2026-08-20T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### AUGUST 21, 2026
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 29. AUDIT AUGUST 21
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-21T00:00:00Z&endUtc=2026-08-21T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 30. BACKFILL AUGUST 21
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-21T00:00:00Z&endUtc=2026-08-21T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 31. VERIFY AUGUST 21
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-21T00:00:00Z&endUtc=2026-08-21T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### AUGUST 22, 2026
+###
+### SATURDAY
+### NO NORMAL MES TRADING SESSION
+### EXPECTED RESULT MAY BE 0 BARS.
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 32. AUDIT AUGUST 22
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-22T00:00:00Z&endUtc=2026-08-22T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 33. BACKFILL AUGUST 22
+###
+### EXPECTED TO RETURN 0 BARS.
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-22T00:00:00Z&endUtc=2026-08-22T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 34. VERIFY AUGUST 22
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-22T00:00:00Z&endUtc=2026-08-22T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### AUGUST 23, 2026
+###
+### SUNDAY
+###
+### EXCLUDED FROM INITIAL CLEAN UTC-DAY CROSS-DAY ANALYSIS.
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 35. AUDIT AUGUST 23
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-23T00:00:00Z&endUtc=2026-08-23T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 36. BACKFILL AUGUST 23
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-23T00:00:00Z&endUtc=2026-08-23T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 37. VERIFY AUGUST 23
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-23T00:00:00Z&endUtc=2026-08-23T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### AUGUST 24, 2026
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 38. AUDIT AUGUST 24
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-24T00:00:00Z&endUtc=2026-08-24T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 39. BACKFILL AUGUST 24
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-24T00:00:00Z&endUtc=2026-08-24T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 40. VERIFY AUGUST 24
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-24T00:00:00Z&endUtc=2026-08-24T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### AUGUST 25, 2026
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 41. AUDIT AUGUST 25
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-25T00:00:00Z&endUtc=2026-08-25T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 42. BACKFILL AUGUST 25
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/MassiveBackfill/MESU6?startUtc=2026-08-25T00:00:00Z&endUtc=2026-08-25T23:59:00Z
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 43. VERIFY AUGUST 25
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MarketDataGap/MESU6?startUtc=2026-08-25T00:00:00Z&endUtc=2026-08-25T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### VALIDATION DATASET DAILY RESEARCH SUMMARIES
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 44. COMPACT RESEARCH SUMMARY - AUGUST 19
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-19T00:00:00Z&endUtc=2026-08-19T23:59:00Z&top=5
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 45. COMPACT RESEARCH SUMMARY - AUGUST 20
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-20T00:00:00Z&endUtc=2026-08-20T23:59:00Z&top=5
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 46. COMPACT RESEARCH SUMMARY - AUGUST 21
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-21T00:00:00Z&endUtc=2026-08-21T23:59:00Z&top=5
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 47. COMPACT RESEARCH SUMMARY - AUGUST 22
+###
+### WEEKEND / EXPECTED NO NORMAL SESSION.
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-22T00:00:00Z&endUtc=2026-08-22T23:59:00Z&top=5
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 48. COMPACT RESEARCH SUMMARY - AUGUST 23
+###
+### SUNDAY - NOT USED IN INITIAL CROSS-DAY REPORT.
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-23T00:00:00Z&endUtc=2026-08-23T23:59:00Z&top=5
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 49. COMPACT RESEARCH SUMMARY - AUGUST 24
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-24T00:00:00Z&endUtc=2026-08-24T23:59:00Z&top=5
+Accept: application/json
+
+
+### ------------------------------------------------------------
+### 50. COMPACT RESEARCH SUMMARY - AUGUST 25
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/ResearchSummary/MESU6?startUtc=2026-08-25T00:00:00Z&endUtc=2026-08-25T23:59:00Z&top=5
+Accept: application/json
+
+
+### ============================================================
+### FROZEN OUT-OF-SAMPLE VALIDATION
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 51. VALIDATE AUGUST 26 DISCOVERY CANDIDATE
+###
+### DISCOVERY:
+###
+### AUGUST 26
+### 14:00 UTC -> 23:44 UTC
+###
+### VALIDATION:
+###
+### AUGUST 19 -> AUGUST 25
+###
+### CURRENT KNOWN RESULT:
+###
+### BoundaryTouch + 1R
+### FAILED OUT-OF-SAMPLE VALIDATION
+###
+### THIS REQUEST IS RETAINED FOR REPRODUCIBILITY.
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/OutOfSampleValidation/MESU6?discoveryStartUtc=2026-08-26T14:00:00Z&discoveryEndUtc=2026-08-26T23:44:00Z&validationStartUtc=2026-08-19T00:00:00Z&validationEndUtc=2026-08-25T23:59:00Z
+Accept: application/json
+
+
+### ============================================================
+### MASSIVE CONTRACT LOOKUP
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 52. FIND CURRENT MES CONTRACTS
+### ------------------------------------------------------------
+
+GET {{PFA_FVG_Scanner_HostAddress}}/api/MassiveContracts/mes
+Accept: application/json
+
+
+### ============================================================
+### CROSS-DAY EVIDENCE ENGINE
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 53. CROSS-DAY EVIDENCE - AUGUST 19 THROUGH AUGUST 25
+###
+### THIS IS NOW THE PRIMARY MULTI-DAY LEARNING REQUEST.
+###
+### THE CONTROLLER AUTOMATICALLY EXCLUDES:
+###
+### SATURDAY AUGUST 22
+### SUNDAY AUGUST 23
+###
+### INCLUDED:
+###
+### AUGUST 19
+### AUGUST 20
+### AUGUST 21
+### AUGUST 24
+### AUGUST 25
+###
+### EACH DAY IS ANALYZED INDEPENDENTLY.
+###
+### IDENTICAL RULE DEFINITIONS ARE THEN MATCHED ACROSS DAYS.
+###
+### CURRENT CROSS-DAY PROMOTION GATES:
+###
+### >= 3 observed trading days
+###
+### >= 20 independent FVGs
+###
+### >= 60% positive days
+###
+### >= +0.10R aggregate expectancy
+###
+### >= 1.25 profit factor
+###
+### POSSIBLE CLASSIFICATIONS:
+###
+### PersistentCandidate
+### Watchlist
+### Unstable
+### PersistentNegative
+### InsufficientEvidence
+###
+### IMPORTANT:
+###
+### PersistentCandidate DOES NOT mean live activation.
+###
+### PersistentCandidate
+### ->
+### FrozenOutOfSampleValidation
+### ->
+### Sandbox
+### ->
+### Promotion Review
+###
+### top=10 returns the 10 strongest rules in each major category.
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/CrossDayEvidence/MESU6?startUtc=2026-08-19T00:00:00Z&endUtc=2026-08-25T23:59:00Z&top=10
+Accept: application/json
+
+
+### ============================================================
+### FUTURE CROSS-DAY RESEARCH WINDOWS
+### ============================================================
+
+
+### ------------------------------------------------------------
+### 54. CROSS-DAY EVIDENCE - AUGUST 19 THROUGH AUGUST 26
+###
+### RESEARCH ONLY.
+###
+### NOTE:
+### THIS INCLUDES AUGUST 26.
+###
+### DO NOT USE THIS DATASET AS THE UNSEEN VALIDATION SET FOR A
+### CANDIDATE THAT WAS ORIGINALLY DISCOVERED ON AUGUST 26.
+###
+### USEFUL LATER FOR GENERAL CROSS-DAY LEARNING.
+### ------------------------------------------------------------
+
+POST {{PFA_FVG_Scanner_HostAddress}}/api/CrossDayEvidence/MESU6?startUtc=2026-08-19T00:00:00Z&endUtc=2026-08-26T23:59:00Z&top=10
+Accept: application/json
