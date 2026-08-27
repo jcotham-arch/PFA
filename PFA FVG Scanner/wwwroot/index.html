@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0e13" />
+  <meta name="description" content="Prop Firm Assassins market intelligence and strategy research command center." />
+  <meta property="og:title" content="PFA Market Intelligence" />
+  <meta property="og:description" content="Research first. Evidence always." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="http://localhost:5188/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="PFA Market Intelligence" />
+  <meta name="twitter:description" content="Research first. Evidence always." />
+  <meta name="twitter:image" content="http://localhost:5188/og.png" />
+  <title>PFA · Market Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="#" aria-label="PFA home">
+        <span class="brand-mark">P</span>
+        <span><strong>PFA</strong><small>Market Intelligence</small></span>
+      </a>
+      <nav class="nav-list">
+        <button class="nav-item active" data-view="overview"><span>⌂</span>Overview</button>
+        <button class="nav-item" data-view="market"><span>⌁</span>Market</button>
+        <button class="nav-item" data-view="patterns"><span>◇</span>Patterns</button>
+        <button class="nav-item" data-view="research"><span>⌕</span>Research</button>
+        <button class="nav-item" data-view="evidence"><span>▥</span>Evidence</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="nav-item" data-view="system"><span>◉</span>System</button>
+        <div class="connection"><i></i><span><strong>Research mode</strong><small>Execution disabled</small></span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="viewEyebrow">Command center</p>
+          <h1 id="viewTitle">Market intelligence</h1>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" id="refreshButton" aria-label="Refresh data">↻</button>
+          <button class="instrument-picker" id="instrumentPicker"><span>MESU6</span><small>Micro E-mini S&amp;P</small><b>⌄</b></button>
+          <div class="avatar">JC</div>
+        </div>
+      </header>
+
+      <section class="view active" id="overview" aria-labelledby="viewTitle">
+        <div class="market-strip">
+          <div><span class="live-dot"></span><small>MESU6</small><strong>6,489.25</strong><em class="up">+0.38%</em></div>
+          <div><small>Session</small><strong>Regular Morning</strong><em>13:42 UTC</em></div>
+          <div><small>Data quality</small><strong>99.8%</strong><em class="up">Healthy</em></div>
+          <div><small>Canonical bars</small><strong data-live="canonicalBars">6,780</strong><em>5-day window</em></div>
+        </div>
+
+        <div class="hero-grid">
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">Market timeline</p><h2>MESU6 · 5 minute</h2></div>
+              <div class="segmented" role="group" aria-label="Chart timeframe">
+                <button>1m</button><button class="active">5m</button><button>15m</button><button>1h</button>
+              </div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="marketChart" aria-label="MES five-minute price chart"></canvas>
+              <div class="chart-badge bullish"><span></span>Bullish FVG · 6,476.50–6,480.25</div>
+            </div>
+            <div class="chart-legend"><span><i class="green"></i>Price</span><span><i class="amber"></i>Fair value gap</span><span class="mono">O 6,483.00&nbsp;&nbsp; H 6,491.75&nbsp;&nbsp; L 6,479.50&nbsp;&nbsp; C 6,489.25</span></div>
+          </article>
+
+          <article class="panel readiness-panel">
+            <div class="panel-heading"><div><p class="eyebrow">Research pipeline</p><h2>Evidence readiness</h2></div><span class="status-pill">Stage 3 of 8</span></div>
+            <div class="readiness-score"><div class="ring"><span>36</span><small>candidates</small></div><div><strong>Cross-day evidence</strong><p>36 rules passed persistence gates. No strategy is authorized for activation.</p></div></div>
+            <ol class="pipeline">
+              <li class="done"><i>✓</i><span><strong>Observation</strong><small>203 FVGs</small></span></li>
+              <li class="done"><i>✓</i><span><strong>Discovery</strong><small>366 rules</small></span></li>
+              <li class="current"><i>3</i><span><strong>Cross-day evidence</strong><small>5 trading days</small></span></li>
+              <li><i>4</i><span><strong>Frozen validation</strong><small>Next required stage</small></span></li>
+              <li><i>5</i><span><strong>Sandbox</strong><small>Locked</small></span></li>
+            </ol>
+            <button class="secondary-button full" data-view-link="evidence">Open evidence review <span>→</span></button>
+          </article>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card"><div><p>FVGs detected</p><strong>203</strong></div><span class="metric-icon blue">◇</span><footer><em class="up">+18</em> vs prior 5 days</footer></article>
+          <article class="metric-card"><div><p>Learning records</p><strong>1,161</strong></div><span class="metric-icon violet">⌁</span><footer><em>151</em> distinct FVGs</footer></article>
+          <article class="metric-card"><div><p>Persistent rules</p><strong>36</strong></div><span class="metric-icon green">↑</span><footer><em class="up">9.8%</em> of rules tested</footer></article>
+          <article class="metric-card"><div><p>Avoidance rules</p><strong>24</strong></div><span class="metric-icon red">↓</span><footer><em class="down">Persistent negative</em></footer></article>
+        </div>
+
+        <div class="lower-grid">
+          <article class="panel candidates-panel">
+            <div class="panel-heading"><div><p class="eyebrow">Top evidence</p><h2>Persistent candidates</h2></div><button class="text-button" data-view-link="research">View all 36 →</button></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Rule</th><th>Days</th><th>Trades</th><th>Expectancy</th><th>Profit factor</th><th>Stability</th><th></th></tr></thead>
+                <tbody id="candidateRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="panel activity-panel">
+            <div class="panel-heading"><div><p class="eyebrow">System</p><h2>Recent activity</h2></div><span class="health"><i></i>All services healthy</span></div>
+            <div class="activity-list">
+              <div><span class="activity-icon green">✓</span><p><strong>Cross-day analysis completed</strong><small>MESU6 · Aug 19–25 · 366 rules</small></p><time>2m</time></div>
+              <div><span class="activity-icon blue">↻</span><p><strong>Canonical timeline synchronized</strong><small>1,380 one-minute bars reconciled</small></p><time>8m</time></div>
+              <div><span class="activity-icon amber">◇</span><p><strong>39 new FVGs evaluated</strong><small>250 learning records generated</small></p><time>14m</time></div>
+              <div><span class="activity-icon violet">▥</span><p><strong>Golden masters passed</strong><small>60 automated checks · 0 failures</small></p><time>1h</time></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view placeholder-view" id="market"><div class="page-intro"><p class="eyebrow">Canonical timeline</p><h2>Market explorer</h2><p>Inspect provider-neutral bars, sessions, provenance, revisions, and data quality.</p></div><div class="feature-preview"><div class="preview-chart"></div><div class="preview-stack"><article><small>Current instrument</small><strong>MESU6</strong><p>Micro E-mini S&amp;P 500 · CME</p></article><article><small>Timeline health</small><strong class="up">Healthy</strong><p>Provider sources agree · no unresolved conflicts</p></article></div></div></section>
+      <section class="view placeholder-view" id="patterns"><div class="page-intro"><p class="eyebrow">Pattern module #1</p><h2>Fair value gaps</h2><p>Explore detected geometry, mitigation lifecycle, replay chronology, and scenarios.</p></div><div class="empty-state"><span>◇</span><h3>Pattern workspace is framed</h3><p>The next product slice will connect the live FVG observation and outcome APIs here.</p></div></section>
+      <section class="view placeholder-view" id="research"><div class="page-intro"><p class="eyebrow">Hypothesis laboratory</p><h2>Research candidates</h2><p>Compare immutable rules without turning research results into trading authorization.</p></div><div class="candidate-cards" id="candidateCards"></div></section>
+      <section class="view placeholder-view" id="evidence"><div class="page-intro"><p class="eyebrow">Independent evidence</p><h2>Cross-day review</h2><p>Five trading days · 366 unique rules · 36 eligible for frozen validation.</p></div><div class="evidence-board"><article><span>36</span><strong>Persistent candidates</strong><p>Passed all current persistence gates.</p></article><article><span>28</span><strong>Watchlist</strong><p>Positive behavior requiring more evidence.</p></article><article><span>24</span><strong>Persistent negative</strong><p>Retained as candidate avoidance behavior.</p></article><article><span>251</span><strong>Insufficient evidence</strong><p>Not enough independent observations.</p></article></div></section>
+      <section class="view placeholder-view" id="system"><div class="page-intro"><p class="eyebrow">Operations</p><h2>System health</h2><p>Canonical ingestion, provider connectivity, quality, and research-engine versions.</p></div><div class="service-grid"><article><i></i><span><strong>Market data pipeline</strong><small>Healthy · Massive delayed feed</small></span><em>99.9%</em></article><article><i></i><span><strong>Canonical timeline</strong><small>Healthy · preserved revisions</small></span><em data-live="canonicalBars">6,780 bars</em></article><article><i></i><span><strong>Feature engine</strong><small>Phase 3 · Version 1.0.0</small></span><em data-live="featureDefinitions">Ready</em></article><article><i class="warn"></i><span><strong>Execution</strong><small>Governance locked</small></span><em>Disabled</em></article></div></section>
+    </main>
+
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <button class="active" data-view="overview"><span>⌂</span>Home</button><button data-view="market"><span>⌁</span>Market</button><button data-view="patterns"><span>◇</span>Patterns</button><button data-view="research"><span>⌕</span>Research</button><button data-view="system"><span>◉</span>System</button>
+    </nav>
+  </div>
+
+  <dialog id="candidateDialog">
+    <button class="dialog-close" aria-label="Close">×</button>
+    <p class="eyebrow">Frozen validation candidate</p><h2 id="dialogTitle"></h2>
+    <div class="dialog-stats" id="dialogStats"></div>
+    <div class="gate-message"><span>✓</span><p><strong>Persistence gates passed</strong><small>This candidate may advance to frozen out-of-sample validation. It cannot activate a strategy.</small></p></div>
+    <button class="primary-button full" id="prepareValidationButton">Prepare validation workspace</button>
+  </dialog>
+  <div class="toast" id="toast"><span>✓</span>Market intelligence refreshed</div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,13 +1,24 @@
 using System.Text.Json.Serialization;
 using PFA_FVG_Scanner.Data;
 using PFA_FVG_Scanner.Domain.Contracts;
+using PFA_FVG_Scanner.Domain.Features;
 using PFA_FVG_Scanner.Domain.Instruments;
+using PFA_FVG_Scanner.Domain.MarketState;
 using PFA_FVG_Scanner.Domain.Sessions;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Local desktop development must not depend on permission to write to the
+// protected Windows Event Log. Production logging providers remain unchanged.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole();
+    builder.Logging.AddDebug();
+}
 
 // ------------------------------------------------------------
 // CONTROLLERS + JSON
@@ -51,6 +62,10 @@ builder.Services.AddSingleton<ITradingSessionService, LegacyUtcTradingSessionSer
 builder.Services.AddSingleton<ICanonicalBarCanonicalizer, CanonicalBarCanonicalizer>();
 builder.Services.AddSingleton<CanonicalTimelineRepository>();
 builder.Services.AddSingleton<CanonicalMarketDataIngestionService>();
+builder.Services.AddSingleton<IFeatureDefinitionRegistry, FeatureDefinitionRegistry>();
+builder.Services.AddSingleton<LegacyFvgFeatureAdapter>();
+builder.Services.AddSingleton<IMarketStateEngine, MarketStateEngine>();
+builder.Services.AddSingleton<FeatureStateRepository>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES
@@ -229,7 +244,14 @@ if (app.Environment.IsDevelopment())
 // HTTP PIPELINE
 // ------------------------------------------------------------
 
-app.UseHttpsRedirection();
+app.UseDefaultFiles();
+
+app.UseStaticFiles();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthorization();
 

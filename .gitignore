@@ -488,3 +488,6 @@ $RECYCLE.BIN/
 
 # Local development configuration
 appsettings.Development.json
+
+# Disposable local product preview
+.preview/

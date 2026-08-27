@@ -41,12 +41,73 @@ namespace PFA_FVG_Scanner.Data
             await CreateOutcomesTableAsync(connection);
             await CreateExperimentsTableAsync(connection);
             await CreateCanonicalTimelineTablesAsync(connection);
+            await CreateFeatureStateTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateFeatureStateTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS FeatureDefinitions
+                (
+                    FeatureDefinitionId TEXT NOT NULL,
+                    Version TEXT NOT NULL,
+                    Name TEXT NOT NULL,
+                    ValueType TEXT NOT NULL,
+                    Unit TEXT NOT NULL,
+                    Role TEXT NOT NULL,
+                    InputRequirement TEXT NOT NULL,
+                    LookbackTicks INTEGER NOT NULL,
+                    Description TEXT NOT NULL,
+                    PRIMARY KEY (FeatureDefinitionId, Version)
+                );
+                CREATE TABLE IF NOT EXISTS MarketStateSnapshots
+                (
+                    SnapshotId TEXT PRIMARY KEY,
+                    InstrumentId TEXT NOT NULL,
+                    ContractId TEXT,
+                    AsOfUtc TEXT NOT NULL,
+                    KnownAtUtc TEXT NOT NULL,
+                    DataRevision TEXT NOT NULL,
+                    EngineVersion TEXT NOT NULL,
+                    TradingSessionId TEXT NOT NULL,
+                    QualityFlags INTEGER NOT NULL,
+                    SourceReferencesJson TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS FeatureValues
+                (
+                    FeatureValueId TEXT PRIMARY KEY,
+                    SnapshotId TEXT NOT NULL,
+                    FeatureDefinitionId TEXT NOT NULL,
+                    FeatureDefinitionVersion TEXT NOT NULL,
+                    SubjectId TEXT NOT NULL,
+                    InstrumentId TEXT NOT NULL,
+                    AsOfUtc TEXT NOT NULL,
+                    KnownAtUtc TEXT NOT NULL,
+                    Value TEXT NOT NULL,
+                    EngineVersion TEXT NOT NULL,
+                    DataRevision TEXT NOT NULL,
+                    QualityFlags INTEGER NOT NULL,
+                    SourceReferencesJson TEXT NOT NULL,
+                    FOREIGN KEY (SnapshotId) REFERENCES MarketStateSnapshots(SnapshotId),
+                    FOREIGN KEY (FeatureDefinitionId, FeatureDefinitionVersion)
+                        REFERENCES FeatureDefinitions(FeatureDefinitionId, Version)
+                );
+                INSERT OR IGNORE INTO CanonicalMigrationJournal
+                    (MigrationId, AppliedAtUtc, Description)
+                VALUES ('PHASE3_FEATURE_STATE_1', datetime('now'),
+                    'Additive versioned feature definitions, values and immutable market-state snapshots.');
+                CREATE INDEX IF NOT EXISTS IX_FeatureValues_Instrument_KnownAt
+                    ON FeatureValues (InstrumentId, KnownAtUtc, FeatureDefinitionId);
+                CREATE INDEX IF NOT EXISTS IX_MarketStateSnapshots_Instrument_AsOf
+                    ON MarketStateSnapshots (InstrumentId, AsOfUtc);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateCanonicalTimelineTablesAsync(SqliteConnection connection)
