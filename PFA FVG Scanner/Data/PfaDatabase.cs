@@ -43,12 +43,120 @@ namespace PFA_FVG_Scanner.Data
             await CreateCanonicalTimelineTablesAsync(connection);
             await CreateFeatureStateTablesAsync(connection);
             await CreateUniversalPatternReferenceTablesAsync(connection);
+            await CreateUniversalMarketRecordTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateUniversalMarketRecordTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS UniversalMarketObservations
+                (
+                    ObservationId TEXT NOT NULL,
+                    Revision INTEGER NOT NULL,
+                    ModuleId TEXT NOT NULL,
+                    ModuleVersion TEXT NOT NULL,
+                    PatternType TEXT NOT NULL,
+                    InstrumentId TEXT NOT NULL,
+                    ContractId TEXT,
+                    Timeframe TEXT NOT NULL,
+                    Direction TEXT NOT NULL,
+                    FormationTimeUtc TEXT NOT NULL,
+                    KnownAtUtc TEXT NOT NULL,
+                    LifecycleState TEXT NOT NULL,
+                    PayloadSchema TEXT NOT NULL,
+                    PayloadJson TEXT NOT NULL,
+                    SourceReferencesJson TEXT NOT NULL,
+                    QualityFlags INTEGER NOT NULL,
+                    ContentHash TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    PRIMARY KEY (ObservationId, Revision)
+                );
+                CREATE TABLE IF NOT EXISTS UniversalObservationLifecycleEvents
+                (
+                    LifecycleEventId TEXT PRIMARY KEY,
+                    ObservationId TEXT NOT NULL,
+                    ObservationRevision INTEGER NOT NULL,
+                    LifecycleState TEXT NOT NULL,
+                    OccurredAtUtc TEXT NOT NULL,
+                    Reason TEXT NOT NULL,
+                    FOREIGN KEY (ObservationId, ObservationRevision)
+                        REFERENCES UniversalMarketObservations(ObservationId, Revision)
+                );
+                CREATE TABLE IF NOT EXISTS UniversalMarketOutcomes
+                (
+                    OutcomeId TEXT PRIMARY KEY,
+                    ObservationId TEXT NOT NULL,
+                    OutcomeVersion TEXT NOT NULL,
+                    EvaluatedThroughUtc TEXT NOT NULL,
+                    SamplesEvaluated INTEGER NOT NULL,
+                    PayloadSchema TEXT NOT NULL,
+                    PayloadJson TEXT NOT NULL,
+                    QualityFlags INTEGER NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS UniversalOutcomeMetrics
+                (
+                    OutcomeId TEXT NOT NULL,
+                    MetricName TEXT NOT NULL,
+                    HorizonMinutes INTEGER NOT NULL,
+                    Value TEXT NOT NULL,
+                    Unit TEXT NOT NULL,
+                    MeasuredAtUtc TEXT,
+                    PRIMARY KEY (OutcomeId, MetricName, HorizonMinutes),
+                    FOREIGN KEY (OutcomeId) REFERENCES UniversalMarketOutcomes(OutcomeId)
+                );
+                CREATE TABLE IF NOT EXISTS UniversalOutcomeEvents
+                (
+                    OutcomeEventId TEXT PRIMARY KEY,
+                    OutcomeId TEXT NOT NULL,
+                    ObservationId TEXT NOT NULL,
+                    EventType TEXT NOT NULL,
+                    OccurredAtUtc TEXT NOT NULL,
+                    Ordinal INTEGER NOT NULL,
+                    PayloadJson TEXT NOT NULL,
+                    FOREIGN KEY (OutcomeId) REFERENCES UniversalMarketOutcomes(OutcomeId)
+                );
+                CREATE TABLE IF NOT EXISTS UniversalObservationRelationships
+                (
+                    RelationshipId TEXT PRIMARY KEY,
+                    FromObservationId TEXT NOT NULL,
+                    ToObservationId TEXT NOT NULL,
+                    RelationshipType TEXT NOT NULL,
+                    KnownAtUtc TEXT NOT NULL,
+                    PayloadJson TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO UniversalMarketObservations
+                    (ObservationId, Revision, ModuleId, ModuleVersion, PatternType, InstrumentId,
+                     ContractId, Timeframe, Direction, FormationTimeUtc, KnownAtUtc, LifecycleState,
+                     PayloadSchema, PayloadJson, SourceReferencesJson, QualityFlags, ContentHash, CreatedAtUtc)
+                SELECT ObservationId, 1, 'fvg', 'legacy-1.0.0', 'FairValueGap', Symbol,
+                       NULL, Timeframe, Direction, MarketTimeUtc, MarketTimeUtc, 'Detected',
+                       'pfa.fvg.observation/legacy', COALESCE(MetadataJson, '{}'), '[]', 0,
+                       'legacy:' || ObservationId, CreatedAtUtc
+                FROM Observations WHERE ObservationType = 'FVG';
+                INSERT OR IGNORE INTO UniversalObservationLifecycleEvents
+                    (LifecycleEventId, ObservationId, ObservationRevision, LifecycleState, OccurredAtUtc, Reason)
+                SELECT 'legacy-' || ObservationId, ObservationId, 1, 'Detected', MarketTimeUtc,
+                       'phase6-legacy-backfill'
+                FROM Observations WHERE ObservationType = 'FVG';
+                INSERT OR IGNORE INTO CanonicalMigrationJournal
+                    (MigrationId, AppliedAtUtc, Description)
+                VALUES ('PHASE6_UNIVERSAL_MARKET_RECORDS_1', datetime('now'),
+                    'Add immutable universal observations, outcomes, metrics, chronology, lifecycle and relationships.');
+                CREATE INDEX IF NOT EXISTS IX_UniversalObservations_Module_Time
+                    ON UniversalMarketObservations (ModuleId, InstrumentId, FormationTimeUtc);
+                CREATE INDEX IF NOT EXISTS IX_UniversalOutcomes_Observation
+                    ON UniversalMarketOutcomes (ObservationId, EvaluatedThroughUtc);
+                CREATE UNIQUE INDEX IF NOT EXISTS UX_UniversalOutcomeEvents_Order
+                    ON UniversalOutcomeEvents (OutcomeId, Ordinal);
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateUniversalPatternReferenceTablesAsync(SqliteConnection connection)

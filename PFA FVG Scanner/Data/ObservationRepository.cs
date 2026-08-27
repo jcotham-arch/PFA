@@ -35,8 +35,11 @@ namespace PFA_FVG_Scanner.Data
 
             connection.Open();
 
+            using SqliteTransaction transaction = connection.BeginTransaction();
+
             using SqliteCommand command =
                 connection.CreateCommand();
+            command.Transaction = transaction;
 
             string observationId =
                 CreateDeterministicFvgObservationId(
@@ -149,6 +152,7 @@ namespace PFA_FVG_Scanner.Data
             command.ExecuteNonQuery();
 
             using SqliteCommand universalCommand = connection.CreateCommand();
+            universalCommand.Transaction = transaction;
             universalCommand.CommandText = """
                 INSERT OR IGNORE INTO UniversalPatternObservationReferences
                     (PatternObservationId, ModuleId, ModuleVersion, PatternType,
@@ -158,6 +162,11 @@ namespace PFA_FVG_Scanner.Data
             universalCommand.Parameters.AddWithValue("$id", observationId);
             universalCommand.Parameters.AddWithValue("$createdAtUtc", DateTime.UtcNow.ToString("O"));
             universalCommand.ExecuteNonQuery();
+
+            var universal = UniversalMarketRecordRepository.FromFvg(fvg);
+            UniversalMarketRecordRepository.InsertObservationAsync(connection, transaction, universal,
+                CancellationToken.None).GetAwaiter().GetResult();
+            transaction.Commit();
         }
 
         public async Task<int> DeleteFvgsInMarketWindowAsync(
@@ -224,6 +233,36 @@ namespace PFA_FVG_Scanner.Data
             referenceCommand.Parameters.AddWithValue("$startUtc", startUtc.ToString("O"));
             referenceCommand.Parameters.AddWithValue("$endUtc", endUtc.ToString("O"));
             await referenceCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            await using SqliteCommand universalObservationCommand = connection.CreateCommand();
+            universalObservationCommand.Transaction = transaction;
+            universalObservationCommand.CommandText = """
+                DELETE FROM UniversalOutcomeMetrics WHERE OutcomeId IN
+                (SELECT OutcomeId FROM UniversalMarketOutcomes WHERE ObservationId IN
+                    (SELECT ObservationId FROM UniversalMarketObservations
+                     WHERE ModuleId = 'fvg' AND InstrumentId = $symbol AND Timeframe = $timeframe
+                       AND FormationTimeUtc >= $startUtc AND FormationTimeUtc <= $endUtc));
+                DELETE FROM UniversalOutcomeEvents WHERE ObservationId IN
+                (SELECT ObservationId FROM UniversalMarketObservations
+                 WHERE ModuleId = 'fvg' AND InstrumentId = $symbol AND Timeframe = $timeframe
+                   AND FormationTimeUtc >= $startUtc AND FormationTimeUtc <= $endUtc);
+                DELETE FROM UniversalMarketOutcomes WHERE ObservationId IN
+                (SELECT ObservationId FROM UniversalMarketObservations
+                 WHERE ModuleId = 'fvg' AND InstrumentId = $symbol AND Timeframe = $timeframe
+                   AND FormationTimeUtc >= $startUtc AND FormationTimeUtc <= $endUtc);
+                DELETE FROM UniversalObservationLifecycleEvents WHERE ObservationId IN
+                (SELECT ObservationId FROM UniversalMarketObservations
+                 WHERE ModuleId = 'fvg' AND InstrumentId = $symbol AND Timeframe = $timeframe
+                   AND FormationTimeUtc >= $startUtc AND FormationTimeUtc <= $endUtc);
+                DELETE FROM UniversalMarketObservations
+                WHERE ModuleId = 'fvg' AND InstrumentId = $symbol AND Timeframe = $timeframe
+                  AND FormationTimeUtc >= $startUtc AND FormationTimeUtc <= $endUtc;
+                """;
+            universalObservationCommand.Parameters.AddWithValue("$symbol", symbol);
+            universalObservationCommand.Parameters.AddWithValue("$timeframe", timeframe);
+            universalObservationCommand.Parameters.AddWithValue("$startUtc", startUtc.ToString("O"));
+            universalObservationCommand.Parameters.AddWithValue("$endUtc", endUtc.ToString("O"));
+            await universalObservationCommand.ExecuteNonQueryAsync(cancellationToken);
 
             await using SqliteCommand command =
                 connection.CreateCommand();

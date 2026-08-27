@@ -55,6 +55,7 @@ builder.Services.AddSingleton<RawMarketEventRepository>();
 builder.Services.AddSingleton<ObservationRepository>();
 
 builder.Services.AddSingleton<FvgOutcomeRepository>();
+builder.Services.AddSingleton<UniversalMarketRecordRepository>();
 
 // Additive Phase 1 foundations. Legacy consumers remain unchanged until
 // compatibility parity is established by later migration phases.

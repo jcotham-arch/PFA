@@ -243,6 +243,10 @@ namespace PFA_FVG_Scanner.Data
 
             await command.ExecuteNonQueryAsync(
                 cancellationToken);
+
+            var universalRepository = new UniversalMarketRecordRepository(_database);
+            await universalRepository.SaveOutcomeAsync(
+                UniversalMarketRecordRepository.FromFvgOutcome(outcome), cancellationToken);
         }
 
         private static void AddNullableDateTime(
