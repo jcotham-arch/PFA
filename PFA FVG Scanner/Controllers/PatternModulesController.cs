@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PFA_FVG_Scanner.Data;
 using PFA_FVG_Scanner.Domain.Patterns;
+using PFA_FVG_Scanner.Services;
 
 namespace PFA_FVG_Scanner.Controllers;
 
@@ -11,9 +12,10 @@ public sealed class PatternModulesController : ControllerBase
     private readonly IMarketPatternModuleRegistry _registry;
     private readonly ObservationRepository _observations;
     private readonly UniversalMarketRecordRepository _universalRecords;
+    private readonly PatternObservationResearchService _research;
     public PatternModulesController(IMarketPatternModuleRegistry registry, ObservationRepository observations,
-        UniversalMarketRecordRepository universalRecords)
-        => (_registry, _observations, _universalRecords) = (registry, observations, universalRecords);
+        UniversalMarketRecordRepository universalRecords,PatternObservationResearchService research)
+        => (_registry, _observations, _universalRecords,_research) = (registry, observations, universalRecords,research);
 
     [HttpGet("modules")]
     public IActionResult GetModules() => Ok(_registry.GetAll());
@@ -27,6 +29,10 @@ public sealed class PatternModulesController : ControllerBase
     public async Task<IActionResult> GetUniversalObservations([FromQuery] string? moduleId = null,
         [FromQuery] int limit = 100, CancellationToken cancellationToken = default) =>
         Ok(await _universalRecords.GetObservationsAsync(moduleId, limit, cancellationToken));
+
+    [HttpGet("observations/{observationId}/research")]
+    public async Task<IActionResult> GetObservationResearch(string observationId,CancellationToken cancellationToken=default)
+    {var value=await _research.GetAsync(observationId,cancellationToken);return value is null?NotFound():Ok(value);}
 
     [HttpGet("outcomes")]
     public async Task<IActionResult> GetUniversalOutcomes([FromQuery] string? observationId = null,

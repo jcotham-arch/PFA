@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/phase4.css" />
   <link rel="stylesheet" href="/phase5.css" />
+  <link rel="stylesheet" href="/chart-workspace.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -71,6 +72,11 @@
               <div class="segmented" role="group" aria-label="Chart timeframe">
                 <button data-timeframe="1m">1m</button><button class="active" data-timeframe="5m">5m</button><button data-timeframe="15m">15m</button><button data-timeframe="1h">1h</button>
               </div>
+            </div>
+            <div class="chart-toolbar" aria-label="Chart tools">
+              <div class="tool-group"><button data-chart-tool="cursor" title="Select and inspect">Select</button><button data-chart-tool="line" title="Trend line">╱</button><button data-chart-tool="hline" title="Horizontal price level">—</button><button data-chart-tool="vline" title="Vertical time level">│</button><button data-chart-tool="rectangle" title="Rectangle">□</button><button data-chart-tool="measure" title="Measure">↔</button><button data-chart-tool="text" title="Text note">T</button></div>
+              <div class="tool-group indicators"><label><input type="checkbox" data-indicator="sma" checked> SMA20</label><label><input type="checkbox" data-indicator="ema"> EMA20</label><label><input type="checkbox" data-indicator="vwap"> VWAP</label><button id="importIndicatorButton" title="Import safe indicator JSON">Import</button><input id="indicatorFile" type="file" accept="application/json,.json" hidden></div>
+              <div class="tool-group chart-actions"><button id="undoDrawingButton" title="Undo last drawing">↶</button><button id="lockDrawingsButton" title="Lock drawings">Lock</button><button id="freezeChartButton" title="Freeze chart updates">Freeze</button><button id="saveLayoutButton" title="Save layout">Save</button><button id="exportChartDataButton" title="Export visible bars and indicators as CSV">CSV</button><button id="exportLayoutButton" title="Export drawings and indicators as JSON">JSON</button><button id="snapshotChartButton" title="Capture chart image">PNG</button></div>
             </div>
             <div class="chart-wrap">
               <canvas id="marketChart" aria-label="Interactive MES price chart"></canvas>
@@ -149,7 +155,17 @@
     <div class="gate-message"><span>✓</span><p><strong>Persistence gates passed</strong><small>This candidate may advance to frozen out-of-sample validation. It cannot activate a strategy.</small></p></div>
     <button class="primary-button full" id="prepareValidationButton">Prepare validation workspace</button>
   </dialog>
+  <dialog id="observationResearchDialog" class="research-detail-dialog">
+    <button class="dialog-close" aria-label="Close setup research">×</button>
+    <p class="eyebrow">Point-in-time setup research</p><h2 id="observationResearchTitle">Detected setup</h2>
+    <p class="dialog-copy" id="observationResearchMeta"></p>
+    <div id="observationGeometry" class="research-geometry"></div>
+    <div class="scenario-filters" role="group" aria-label="Filter scenarios by outcome"><button class="active" data-scenario-filter="All">All</button><button data-scenario-filter="Good">Good</button><button data-scenario-filter="Bad">Bad</button><button data-scenario-filter="Ambiguous">Ambiguous</button><button data-scenario-filter="Unavailable">Unavailable</button></div>
+    <div id="observationScenarioSummary" class="dialog-copy"></div>
+    <div class="table-wrap"><table><thead><tr><th>Outcome</th><th>Entry</th><th>Stop</th><th>Target</th><th>Exit</th><th>Net R</th><th>Why</th></tr></thead><tbody id="observationScenarioRows"></tbody></table></div>
+    <div id="observationSequenceRows" class="research-sequences"></div>
+  </dialog>
   <div class="toast" id="toast"><span>✓</span>Market intelligence refreshed</div>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=14"></script>
 </body>
 </html>

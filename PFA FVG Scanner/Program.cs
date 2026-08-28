@@ -126,6 +126,7 @@ builder.Services.AddSingleton<AgentBaselineTrainingService>();
 builder.Services.AddSingleton<AgentTrainingReadinessService>();
 builder.Services.AddSingleton<PatternTradeResearchService>();
 builder.Services.AddSingleton<PatternTradeNotificationService>();
+builder.Services.AddSingleton<PatternObservationResearchService>();
 builder.Services.AddSingleton<SequenceTradeResearchService>();
 
 // ------------------------------------------------------------
