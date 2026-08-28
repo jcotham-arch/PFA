@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "grouped-mean-baseline-1.0.0";
+    public const string Version = "grouped-mean-baseline-1.1.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -24,24 +24,33 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var groups = training.GroupBy(x => x.GroupKey, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
-        var metrics = new[] { "Train", "Validation", "Test" }.Select(split =>
+        AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population)
         {
-            var population = rows.Where(x => x.Split == split).ToArray();
-            if (population.Length == 0) return new AgentBaselineMetric(split, 0, 0, 0, 0, 0, 0);
+            if (population.Count == 0) return new AgentBaselineMetric(split, 0, 0, 0, 0, 0, 0);
             var predictions = population.Select(x => (Actual: x.Actual, Prediction: Predict(x))).ToArray();
             var mae = predictions.Average(x => Math.Abs(x.Actual - x.Prediction));
             var mse = predictions.Average(x => (x.Actual - x.Prediction) * (x.Actual - x.Prediction));
             var accuracy = predictions.Count(x => Math.Sign(x.Actual) == Math.Sign(x.Prediction)) /
                 (decimal)predictions.Length;
-            return new(split, population.Length, Round(mae), Round((decimal)Math.Sqrt((double)mse)),
+            return new(split, population.Count, Round(mae), Round((decimal)Math.Sqrt((double)mse)),
                 Round(accuracy), Round(predictions.Average(x => x.Actual)),
                 Round(predictions.Average(x => x.Prediction)));
-        }).ToArray();
+        }
+        var metrics = new[] { "Train", "Validation", "Test" }
+            .Select(split => Evaluate(split, rows.Where(x => x.Split == split).ToArray())).ToArray();
+        var segmentMetrics = rows.Select(x => x.InstrumentId).Distinct().Order()
+            .SelectMany(instrument => new[] { "Validation", "Test" }.Select(split =>
+            {
+                var metric = Evaluate(split, rows.Where(x => x.Split == split && x.InstrumentId == instrument).ToArray());
+                return new AgentBaselineSegmentMetric(instrument, split, metric.SampleCount, metric.MeanAbsoluteError,
+                    metric.RootMeanSquaredError, metric.DirectionalAccuracy, metric.MeanActual, metric.MeanPrediction);
+            })).ToArray();
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
-            Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics });
+            Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
-            request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash);
+            request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
+            SegmentMetrics:segmentMetrics);
         await PersistAsync(run, token);
         return run;
     }
@@ -77,7 +86,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         {
             var labels = JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(4)) ?? [];
             if (!labels.TryGetValue(target, out var actual)) continue;
-            values.Add(new(reader.GetString(0), $"{reader.GetString(1)}|{reader.GetString(2)}|{reader.GetString(3)}", actual));
+            values.Add(new(reader.GetString(0), reader.GetString(1),
+                $"{reader.GetString(1)}|{reader.GetString(2)}|{reader.GetString(3)}", actual));
         }
         return (datasetHash, values);
     }
@@ -100,5 +110,5 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     }
 
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
-    private sealed record Row(string Split,string GroupKey,decimal Actual);
+    private sealed record Row(string Split,string InstrumentId,string GroupKey,decimal Actual);
 }

@@ -47,3 +47,9 @@ The baseline does not generalize and is not a promotable model. Its purpose is t
 4. Report per-instrument, per-module, direction, regime, and date stability.
 5. Freeze a separate execution hypothesis before producing strategy-specific R labels.
 6. Keep all validation/test data outside subsequent fitting and tuning.
+
+## V1.1 split correction
+
+Segmented evaluation revealed that a single global chronological split could place a late-arriving instrument entirely in the test population. Dataset version `generic-outcome-dataset-1.1.0` therefore assigns chronological 70/15/15 splits independently inside each instrument before combining the populations. This preserves temporal ordering while ensuring each included instrument has its own training, validation, and test evidence.
+
+The corrected materialization is `AGDS-50E5F28574E991C0266092D02ED6A515`: 19,900 examples split into 13,928 train, 2,985 validation, and 2,987 test rows. Baseline run `ABR-72FB67B5CAD16F21CF29BE876474D607` evaluates every instrument in both held-out populations. Its aggregate validation/test directional accuracy is 45.9%/45.9%, so it remains a research benchmark rather than a promotable model.

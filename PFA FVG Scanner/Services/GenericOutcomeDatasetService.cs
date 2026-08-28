@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.0.0";
+    public const string Version = "generic-outcome-dataset-1.1.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -24,13 +24,9 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
         if (candidates.Count < 3)
             throw new InvalidOperationException("At least three point-in-time labeled examples are required.");
 
-        var trainEnd = Math.Max(1, (int)Math.Floor(candidates.Count * 0.70m));
-        var validationEnd = Math.Max(trainEnd + 1, (int)Math.Floor(candidates.Count * 0.85m));
-        validationEnd = Math.Min(validationEnd, candidates.Count - 1);
-        var examples = candidates.Select((value, index) => value with
-        {
-            Split = index < trainEnd ? "Train" : index < validationEnd ? "Validation" : "Test"
-        }).ToArray();
+        var examples = candidates.GroupBy(x => x.InstrumentId, StringComparer.Ordinal)
+            .SelectMany(group => AssignSplits(group.OrderBy(x => x.EventTimeUtc).ThenBy(x => x.ExampleId).ToArray()))
+            .OrderBy(x => x.EventTimeUtc).ThenBy(x => x.InstrumentId).ThenBy(x => x.ExampleId).ToArray();
         examples = examples.Select(x => x with { ContentHash = HashExample(x) }).ToArray();
         var dataRevision = AgentTrainingDatasetBuilder.Hash(string.Join('|', examples.Select(x => x.SourceRevision)));
         var datasetSeed = JsonSerializer.Serialize(new
@@ -183,6 +179,17 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
         }
         catch (JsonException) { }
         return values;
+    }
+
+    private static IReadOnlyList<GenericOutcomeResearchExample> AssignSplits(
+        IReadOnlyList<GenericOutcomeResearchExample> examples)
+    {
+        if (examples.Count < 3) return [];
+        var trainEnd = Math.Max(1, (int)Math.Floor(examples.Count * 0.70m));
+        var validationEnd = Math.Max(trainEnd + 1, (int)Math.Floor(examples.Count * 0.85m));
+        validationEnd = Math.Min(validationEnd, examples.Count - 1);
+        return examples.Select((value, index) => value with
+        { Split = index < trainEnd ? "Train" : index < validationEnd ? "Validation" : "Test" }).ToArray();
     }
 
     private static void Walk(JsonElement element, string path, Dictionary<string, decimal> values)

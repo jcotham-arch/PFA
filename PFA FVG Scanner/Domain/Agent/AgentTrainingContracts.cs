@@ -55,6 +55,11 @@ public sealed record AgentBaselineTrainingRequest(string DatasetId,
 public sealed record AgentBaselineMetric(string Split,int SampleCount,decimal MeanAbsoluteError,
     decimal RootMeanSquaredError,decimal DirectionalAccuracy,decimal MeanActual,decimal MeanPrediction);
 
+public sealed record AgentBaselineSegmentMetric(string InstrumentId,string Split,int SampleCount,
+    decimal MeanAbsoluteError,decimal RootMeanSquaredError,decimal DirectionalAccuracy,
+    decimal MeanActual,decimal MeanPrediction);
+
 public sealed record AgentBaselineRun(string RunId,string ModelVersion,string DatasetId,string DatasetContentHash,
     string TargetName,int TrainingSamples,int GroupCount,IReadOnlyList<AgentBaselineMetric> Metrics,
-    DateTime TrainedAtUtc,string ContentHash,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
+    DateTime TrainedAtUtc,string ContentHash,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false,
+    IReadOnlyList<AgentBaselineSegmentMetric>? SegmentMetrics=null);

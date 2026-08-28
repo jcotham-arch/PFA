@@ -65,32 +65,35 @@ public sealed class ProductModuleAndAgentTrainingTests
     {
         using var factory=await TestDatabaseFactory.CreateAsync();
         var repository=new UniversalMarketRecordRepository(factory.Database);
+        foreach(var instrument in new[]{"MES","6E"})
         for(var index=0;index<10;index++)
         {
-            var known=Now.AddDays(-10+index);var observation=new UniversalMarketObservation($"OBS-{index}",1,
-                "liquidity-sweep","1.0.0","LiquiditySweep","MES","MESU6","5m",
+            var known=Now.AddDays(-10+index);var observation=new UniversalMarketObservation($"OBS-{instrument}-{index}",1,
+                "liquidity-sweep","1.0.0","LiquiditySweep",instrument,instrument=="MES"?"MESU6":"6EU6","5m",
                 index%2==0?PatternDirection.Bullish:PatternDirection.Bearish,known.AddMinutes(-5),known,
-                PatternLifecycleState.Detected,"test","{\"range\":5}",[],MarketDataQualityFlags.None,$"OH-{index}");
+                PatternLifecycleState.Detected,"test","{\"range\":5}",[],MarketDataQualityFlags.None,$"OH-{instrument}-{index}");
             await repository.SaveObservationAsync(observation,TestContext.Current.CancellationToken);
-            var measured=known.AddMinutes(15);var outcome=new UniversalMarketOutcome($"OUT-{index}",observation.ObservationId,
+            var measured=known.AddMinutes(15);var outcome=new UniversalMarketOutcome($"OUT-{instrument}-{index}",observation.ObservationId,
                 "generic-forward-1.0.0",measured,1,"test","{}",
                 [new("directional-close-change",15,index-5,"ticks",measured),
                  new("maximum-favorable-excursion",15,index+1,"ticks",measured),
                  new("maximum-adverse-excursion",15,2,"ticks",measured)],[],MarketDataQualityFlags.None);
             await repository.SaveOutcomeAsync(outcome,TestContext.Current.CancellationToken);
         }
-        var service=new GenericOutcomeDatasetService(factory.Database);var request=new GenericOutcomeDatasetRequest(Now,15,["MES"]);
+        var service=new GenericOutcomeDatasetService(factory.Database);var request=new GenericOutcomeDatasetRequest(Now,15,["MES","6E"]);
         var first=await service.BuildAsync(request,TestContext.Current.CancellationToken);
         var repeated=await service.BuildAsync(request,TestContext.Current.CancellationToken);
-        Assert.Equal(first.ContentHash,repeated.ContentHash);Assert.Equal(10,first.ExampleCount);
-        Assert.Equal(7,first.TrainCount);Assert.Equal(1,first.ValidationCount);Assert.Equal(2,first.TestCount);
+        Assert.Equal(first.ContentHash,repeated.ContentHash);Assert.Equal(20,first.ExampleCount);
+        Assert.Equal(14,first.TrainCount);Assert.Equal(2,first.ValidationCount);Assert.Equal(4,first.TestCount);
         Assert.False(first.CanActivateStrategy);Assert.False(first.CanRouteToRealBroker);
         Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
         var training=new AgentBaselineTrainingService(factory.Database);
         var baseline=await training.TrainAsync(new(first.DatasetId),TestContext.Current.CancellationToken);
         var baselineAgain=await training.TrainAsync(new(first.DatasetId),TestContext.Current.CancellationToken);
-        Assert.Equal(baseline.ContentHash,baselineAgain.ContentHash);Assert.Equal(7,baseline.TrainingSamples);
+        Assert.Equal(baseline.ContentHash,baselineAgain.ContentHash);Assert.Equal(14,baseline.TrainingSamples);
         Assert.Equal(new[]{"Train","Validation","Test"},baseline.Metrics.Select(x=>x.Split));
+        Assert.Equal(4,baseline.SegmentMetrics!.Count);
+        Assert.All(baseline.SegmentMetrics,metric=>Assert.True(metric.SampleCount>0));
         Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
         Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));
     }
