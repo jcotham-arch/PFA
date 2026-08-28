@@ -56,6 +56,8 @@ public sealed class PhaseTwentyTwoDesignGateTests
         Assert.Equal(LivePilotReadinessStatus.DesignReviewRequired,projection.Gate.Status);
         Assert.Equal(11,projection.RequiredDecisionCount);Assert.Equal(0,projection.ApprovedDecisionCount);
         Assert.Null(projection.EvidenceCandidate);Assert.False(projection.Gate.CanRouteToRealBroker);
+        Assert.Equal(LivePilotReadinessAuditor.RequiredTopics,projection.RequiredDecisions.Select(x=>x.Topic).ToArray());
+        Assert.All(projection.RequiredDecisions,x=>{Assert.False(string.IsNullOrWhiteSpace(x.RequiredChoice));Assert.False(string.IsNullOrWhiteSpace(x.RequiredEvidence));});
     }
 
     private static List<LivePilotDesignDecision> Approved()=>LivePilotReadinessAuditor.RequiredTopics.Select((topic,i)=>new LivePilotDesignDecision(topic,"1.0.0",LivePilotDecisionStatus.Approved,$"{{\"boundedDecision\":{i}}}","design-authority",Now.AddMinutes(-10),$"decision-record:{topic}")).ToList();

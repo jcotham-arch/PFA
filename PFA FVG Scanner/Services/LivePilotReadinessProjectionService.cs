@@ -7,10 +7,28 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed record LivePilotReadinessProjection(
     LivePilotReadinessResult Gate,LivePilotEvidenceSnapshot? EvidenceCandidate,
-    int RequiredDecisionCount,int ApprovedDecisionCount,string Guidance);
+    int RequiredDecisionCount,int ApprovedDecisionCount,string Guidance,
+    IReadOnlyList<LivePilotDecisionRequirement> RequiredDecisions);
+
+public sealed record LivePilotDecisionRequirement(string Topic,string DisplayName,string RequiredChoice,string RequiredEvidence);
 
 public sealed class LivePilotReadinessProjectionService(PfaDatabase database,LivePilotReadinessAuditor auditor)
 {
+    public static readonly IReadOnlyList<LivePilotDecisionRequirement> DecisionRequirements=
+    [
+        new("execution-provider-and-certification","Execution provider and certification","Choose the exact futures broker/platform and paper or certification environment.","Official API terms, supported products, account eligibility, and completed certification proof."),
+        new("credential-custody-and-rotation","Credential custody and rotation","Choose the secret store, least-privilege scopes, environments, and rotation/revocation owner.","Credential runbook and evidence that research/UI processes cannot read operational secrets."),
+        new("separate-operational-authentication","Separate operational authentication","Name operational roles and approvals distinct from research, dashboard, sandbox, and governance access.","Role matrix plus successful allow/deny authorization tests."),
+        new("pilot-account-and-capital-boundary","Pilot account and capital boundary","Set the exact account, maximum exposure, daily loss, drawdown, quantity, and pilot duration.","Signed bounded-risk record and broker/account limit evidence."),
+        new("instrument-and-session-allowlist","Instrument and session allowlist","Choose exact contracts, rollover policy, exchange sessions, maintenance, and holiday behavior.","Versioned allowlist with session and rollover test evidence."),
+        new("order-types-and-time-in-force","Order types and time in force","Choose permitted order types, TIF, bracket/OCO ownership, modification, and cancellation rules.","Paper-certification results for every permitted order lifecycle."),
+        new("duplicate-order-idempotency","Duplicate-order idempotency","Approve durable client-order identity, retry, timeout, and ambiguous-ack rules.","Reconnect/retry drill proving no duplicate exposure."),
+        new("reconnect-and-reconciliation","Reconnect and reconciliation","Choose broker-authoritative startup, outage-fill, unknown-order, mismatch, and fail-closed policies.","Restart and outage drills with complete reconciliation evidence."),
+        new("partial-rejected-fill-policy","Partial and rejected fill policy","Choose residual quantity, protection, rejection escalation, rounding, and terminal-state behavior.","Paper tests covering partial, rejected, cancelled, and protective-order failures."),
+        new("independent-kill-switch-ownership","Independent kill-switch ownership","Name emergency-stop owners and approve cancel/flatten, heartbeat, and test cadence.","Independent kill-switch drills and immutable audit records."),
+        new("incident-response-and-rollback","Incident response and rollback","Name severity, notification, evidence, revocation, flattening, and sandbox-return owners.","Incident runbook and completed tabletop/rollback rehearsal.")
+    ];
+
     public async Task<LivePilotReadinessProjection> GetAsync(CancellationToken token=default)
     {
         var evidence=await FindEvidenceAsync(token);var now=DateTime.UtcNow;
@@ -18,7 +36,8 @@ public sealed class LivePilotReadinessProjectionService(PfaDatabase database,Liv
         return new(gate,evidence,LivePilotReadinessAuditor.RequiredTopics.Count,0,
             evidence is null
                 ? "No exact strategy version currently has both stable walk-forward and stable nonzero forward evidence."
-                : "Evidence prerequisites have a candidate, but all accountable design decisions remain unapproved. Live routing stays impossible.");
+                : "Evidence prerequisites have a candidate, but all accountable design decisions remain unapproved. Live routing stays impossible.",
+            DecisionRequirements);
     }
 
     private async Task<LivePilotEvidenceSnapshot?> FindEvidenceAsync(CancellationToken token)

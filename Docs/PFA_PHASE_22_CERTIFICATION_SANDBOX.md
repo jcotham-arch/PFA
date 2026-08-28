@@ -31,6 +31,8 @@ The sandbox dashboard reports campaign and payout-eligible result totals. A payo
 
 The sandbox also projects the existing mandatory live-pilot design gate. It searches for an exact frozen strategy version with a stable immutable walk-forward report and a stable, nonzero Phase 20 forward comparison derived from that same report. It separately displays the eleven accountable design decisions required by the migration plan. Missing evidence or decisions remain visible instead of being inferred or auto-approved. Even `ReadyForInfrastructureBuild` can authorize only an inert infrastructure build; the auditor always returns false for live routing and strategy activation.
 
+The expandable owner worksheet translates every required decision topic into a concrete choice and required proof. It is intentionally read-only: displaying a topic never marks it approved, and no default answer is treated as authority. Decisions must still be explicitly versioned, owned, timed, justified, and linked to durable evidence.
+
 ## Pattern and sequence replay
 
 In Development on the loopback interface only, `POST /api/patterns/replay` replays the registered active detectors against stored market bars and persists universal observations and sequence instances idempotently. The current MES 5-minute replay evaluated 1,481 complete aggregate bars and detected 877 distinct observations: 237 FVG, 320 liquidity sweeps, 160 range breakouts, and 160 failed breakouts. Existing legacy FVG captures remain preserved, so the dashboard's total FVG row may be higher than the replay-only count.
