@@ -127,6 +127,31 @@ public sealed class UniversalMarketRecordRepository
         return records;
     }
 
+    public async Task<IReadOnlyList<UniversalMarketObservation>> GetReplayObservationsAsync(
+        string instrumentId, string contractId, string timeframe,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ObservationId, Revision, ModuleId, ModuleVersion, PatternType, InstrumentId,
+                   ContractId, Timeframe, Direction, FormationTimeUtc, KnownAtUtc, LifecycleState,
+                   PayloadSchema, PayloadJson, SourceReferencesJson, QualityFlags, ContentHash
+            FROM UniversalMarketObservations
+            WHERE InstrumentId = $instrument AND ContractId = $contract AND Timeframe = $timeframe
+            ORDER BY KnownAtUtc, ObservationId;
+            """;
+        command.Parameters.AddWithValue("$instrument", instrumentId.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("$contract", contractId.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("$timeframe", timeframe.Trim().ToLowerInvariant());
+        var records = new List<UniversalMarketObservation>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            records.Add(ReadObservation(reader));
+        return records;
+    }
+
     public async Task<IReadOnlyList<object>> GetOutcomesAsync(string? observationId = null, int limit = 100,
         CancellationToken cancellationToken = default)
     {
@@ -156,6 +181,15 @@ public sealed class UniversalMarketRecordRepository
             });
         return records;
     }
+
+    private static UniversalMarketObservation ReadObservation(SqliteDataReader reader) =>
+        new(reader.GetString(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
+            reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.GetString(7), Enum.Parse<PatternDirection>(reader.GetString(8)), DateTime.Parse(reader.GetString(9), null,
+                DateTimeStyles.RoundtripKind), DateTime.Parse(reader.GetString(10), null, DateTimeStyles.RoundtripKind),
+            Enum.Parse<PatternLifecycleState>(reader.GetString(11)), reader.GetString(12), reader.GetString(13),
+            JsonSerializer.Deserialize<string[]>(reader.GetString(14)) ?? [], (MarketDataQualityFlags)reader.GetInt32(15),
+            reader.GetString(16));
 
     public static UniversalMarketObservation FromFvg(FairValueGap fvg)
     {

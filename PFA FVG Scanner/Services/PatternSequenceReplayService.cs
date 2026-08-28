@@ -11,7 +11,7 @@ using System.Text;
 
 namespace PFA_FVG_Scanner.Services;
 
-public sealed record PatternReplaySummary(string InstrumentId, string Timeframe, int BarsEvaluated,
+public sealed record PatternReplaySummary(string InstrumentId, string ContractId, string Timeframe, int BarsEvaluated,
     int ObservationsDetected, IReadOnlyDictionary<string, int> ModuleCounts,
     int SequenceInstancesPersisted, DateTime CompletedAtUtc);
 
@@ -31,12 +31,18 @@ public sealed class PatternSequenceReplayService(
         MarketDataQualityFlags.InvalidOhlc | MarketDataQualityFlags.UnresolvedInstrument |
         MarketDataQualityFlags.ProviderConflict;
 
-    public async Task<PatternReplaySummary> ReplayAsync(string instrumentId = "MES", string timeframe = "5m",
+    public async Task<PatternReplaySummary> ReplayAsync(string instrumentId = "MES", string? contractId = null,
+        string timeframe = "5m", DateTime? startUtc = null, DateTime? endUtc = null,
         CancellationToken cancellationToken = default)
     {
+        instrumentId = instrumentId.Trim().ToUpperInvariant();
+        timeframe = timeframe.Trim().ToLowerInvariant();
+        contractId = string.IsNullOrWhiteSpace(contractId) ? instrumentId : contractId.Trim().ToUpperInvariant();
         var bars = await timeline.GetCurrentBarsAsync(instrumentId, timeframe, cancellationToken);
+        if (startUtc.HasValue) bars = bars.Where(x => x.OpenTimeUtc >= startUtc.Value.ToUniversalTime()).ToArray();
+        if (endUtc.HasValue) bars = bars.Where(x => x.OpenTimeUtc < endUtc.Value.ToUniversalTime()).ToArray();
         if (bars.Count == 0)
-            bars = await GetLegacyBarsAsync(instrumentId, timeframe, cancellationToken);
+            bars = await GetLegacyBarsAsync(instrumentId, contractId, timeframe, startUtc, endUtc, cancellationToken);
         var detectors = new IMarketPatternDetector[] { fvg, liquiditySweep, rangeBreakout, failedBreakout };
         var detected = new Dictionary<string, UniversalMarketObservation>(StringComparer.Ordinal);
         var counts = detectors.ToDictionary(x => x.ModuleId, _ => 0, StringComparer.OrdinalIgnoreCase);
@@ -73,23 +79,23 @@ public sealed class PatternSequenceReplayService(
             sequenceCount++;
         }
 
-        return new(instrumentId.Trim().ToUpperInvariant(), timeframe.Trim().ToLowerInvariant(), bars.Count,
+        return new(instrumentId, contractId, timeframe, bars.Count,
             detected.Count, counts, sequenceCount, DateTime.UtcNow);
     }
 
-    private async Task<IReadOnlyList<CanonicalBar>> GetLegacyBarsAsync(string instrumentId, string timeframe,
+    private async Task<IReadOnlyList<CanonicalBar>> GetLegacyBarsAsync(string instrumentId, string contractId,
+        string timeframe, DateTime? startUtc, DateTime? endUtc,
         CancellationToken cancellationToken)
     {
-        var symbol = instrumentId.Equals("MES", StringComparison.OrdinalIgnoreCase) ? "MESU6" : instrumentId;
         var minutes = timeframe.ToLowerInvariant() switch { "1m" => 1, "5m" => 5, "15m" => 15, "1h" => 60, _ => 0 };
         if (minutes == 0) return [];
-        var source = await legacyCandles.GetRecentAsync(symbol, "1m", 20_000, cancellationToken);
+        var source = await legacyCandles.GetRangeAsync(contractId, "1m", startUtc, endUtc, cancellationToken);
         return MarketChartService.Aggregate(source.OrderBy(x => x.OpenTimeUtc).ToArray(), minutes)
             .Where(x => x.IsComplete).Select(x =>
             {
                 var naturalKey = $"{instrumentId}|{timeframe}|{x.OpenTimeUtc:O}|legacy";
                 var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(naturalKey)));
-                return new CanonicalBar(id, 1, instrumentId.Trim().ToUpperInvariant(), symbol, symbol,
+                return new CanonicalBar(id, 1, instrumentId.Trim().ToUpperInvariant(), contractId, contractId,
                     timeframe.ToLowerInvariant(), x.OpenTimeUtc, x.CloseTimeUtc, x.Open, x.High, x.Low,
                     x.Close, x.Volume, true, $"legacy-{x.OpenTimeUtc:yyyyMMdd}",
                     DateOnly.FromDateTime(x.OpenTimeUtc), "legacy-replay-1.0", "aggregate-1.0",

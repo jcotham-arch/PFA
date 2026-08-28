@@ -14,7 +14,7 @@ namespace PFA_FVG_Scanner.Data
             _database = database;
         }
 
-        public async Task SaveAsync(
+        public async Task<bool> SaveAsync(
             Candle candle,
             string provider,
             CancellationToken cancellationToken = default)
@@ -136,8 +136,7 @@ namespace PFA_FVG_Scanner.Data
                 "$createdAtUtc",
                 DateTime.UtcNow.ToString("O"));
 
-            await command.ExecuteNonQueryAsync(
-                cancellationToken);
+            return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
         }
 
         public async Task<IReadOnlyList<Candle>> GetRecentAsync(
@@ -254,6 +253,62 @@ namespace PFA_FVG_Scanner.Data
                         IsClosed =
                             reader.GetInt32(8) == 1
                     });
+            }
+
+            return candles;
+        }
+
+        public async Task<IReadOnlyList<Candle>> GetRangeAsync(
+            string symbol,
+            string timeframe,
+            DateTime? startUtc = null,
+            DateTime? endUtc = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+            {
+                throw new ArgumentException("Symbol is required.", nameof(symbol));
+            }
+
+            if (string.IsNullOrWhiteSpace(timeframe))
+            {
+                throw new ArgumentException("Timeframe is required.", nameof(timeframe));
+            }
+
+            await using SqliteConnection connection = _database.CreateConnection();
+            await connection.OpenAsync(cancellationToken);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT Symbol, Timeframe, OpenTimeUtc, Open, High, Low, Close, Volume, IsComplete
+                FROM Candles
+                WHERE Symbol = $symbol
+                  AND Timeframe = $timeframe
+                  AND ($startUtc IS NULL OR OpenTimeUtc >= $startUtc)
+                  AND ($endUtc IS NULL OR OpenTimeUtc < $endUtc)
+                ORDER BY OpenTimeUtc;
+                """;
+            command.Parameters.AddWithValue("$symbol", symbol.Trim().ToUpperInvariant());
+            command.Parameters.AddWithValue("$timeframe", timeframe.Trim().ToLowerInvariant());
+            command.Parameters.AddWithValue("$startUtc", startUtc.HasValue ? startUtc.Value.ToUniversalTime().ToString("O") : DBNull.Value);
+            command.Parameters.AddWithValue("$endUtc", endUtc.HasValue ? endUtc.Value.ToUniversalTime().ToString("O") : DBNull.Value);
+
+            var candles = new List<Candle>();
+            await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                candles.Add(new Candle
+                {
+                    Symbol = reader.GetString(0),
+                    Timeframe = reader.GetString(1),
+                    OpenTimeUtc = DateTime.Parse(reader.GetString(2), null,
+                        System.Globalization.DateTimeStyles.RoundtripKind),
+                    Open = decimal.Parse(reader.GetString(3), System.Globalization.CultureInfo.InvariantCulture),
+                    High = decimal.Parse(reader.GetString(4), System.Globalization.CultureInfo.InvariantCulture),
+                    Low = decimal.Parse(reader.GetString(5), System.Globalization.CultureInfo.InvariantCulture),
+                    Close = decimal.Parse(reader.GetString(6), System.Globalization.CultureInfo.InvariantCulture),
+                    Volume = decimal.Parse(reader.GetString(7), System.Globalization.CultureInfo.InvariantCulture),
+                    IsClosed = reader.GetInt32(8) == 1
+                });
             }
 
             return candles;

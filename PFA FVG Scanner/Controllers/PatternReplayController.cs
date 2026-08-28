@@ -10,11 +10,13 @@ public sealed class PatternReplayController(PatternSequenceReplayService replay,
 {
     [HttpPost]
     public async Task<IActionResult> Run([FromQuery] string instrumentId = "MES",
-        [FromQuery] string timeframe = "5m", CancellationToken cancellationToken = default)
+        [FromQuery] string? contractId = null, [FromQuery] string timeframe = "5m",
+        [FromQuery] DateTime? startUtc = null, [FromQuery] DateTime? endUtc = null,
+        CancellationToken cancellationToken = default)
     {
         if (!environment.IsDevelopment() || HttpContext.Connection.RemoteIpAddress is not { } address ||
             !System.Net.IPAddress.IsLoopback(address))
             return NotFound();
-        return Ok(await replay.ReplayAsync(instrumentId, timeframe, cancellationToken));
+        return Ok(await replay.ReplayAsync(instrumentId, contractId, timeframe, startUtc, endUtc, cancellationToken));
     }
 }

@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using PFA_FVG_Scanner.MarketData;
+using PFA_FVG_Scanner.Domain.Instruments;
 
 namespace PFA_FVG_Scanner.Controllers
 {
@@ -10,18 +11,30 @@ namespace PFA_FVG_Scanner.Controllers
     {
         private readonly MassiveOptions _options;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IInstrumentDefinitionRegistry _instruments;
 
         public MassiveContractsController(
             MassiveOptions options,
-            IHttpClientFactory httpClientFactory)
+            IHttpClientFactory httpClientFactory,IInstrumentDefinitionRegistry instruments)
         {
             _options = options;
             _httpClientFactory = httpClientFactory;
+            _instruments = instruments;
         }
 
         [HttpGet("mes")]
         public async Task<IActionResult> GetCurrentMesContracts()
+            => await GetCurrentContracts("MES");
+
+        [HttpGet("{productCode}")]
+        public async Task<IActionResult> GetCurrentProductContracts(string productCode)
+            => await GetCurrentContracts(productCode);
+
+        private async Task<IActionResult> GetCurrentContracts(string productCode)
         {
+            productCode=productCode.Trim().ToUpperInvariant();
+            if(_instruments.GetAll().All(x=>!x.RootSymbol.Equals(productCode,StringComparison.OrdinalIgnoreCase)))
+                return NotFound(new{message=$"Product '{productCode}' is not in the registered research universe."});
             if (string.IsNullOrWhiteSpace(_options.ApiKey))
             {
                 return BadRequest(new
@@ -45,9 +58,10 @@ namespace PFA_FVG_Scanner.Controllers
 
                 string url =
                     $"{_options.ApiBaseUrl}/futures/v1/contracts" +
-                    $"?product_code=MES" +
+                    $"?product_code={Uri.EscapeDataString(productCode)}" +
                     $"&date={date}" +
                     $"&active=true" +
+                    $"&type=single" +
                     $"&limit=100" +
                     $"&sort=ticker.asc" +
                     $"&apiKey={Uri.EscapeDataString(_options.ApiKey)}";
@@ -104,7 +118,7 @@ namespace PFA_FVG_Scanner.Controllers
             return NotFound(new
             {
                 message =
-                    "No active MES contracts were found " +
+                    $"No active {productCode} contracts were found " +
                     "for today or the previous 7 calendar days.",
 
                 requestedDate =

@@ -92,16 +92,39 @@ public sealed class PhaseSevenSequenceIntelligenceTests
     [Fact]
     public void BuiltInDefinitionTreatsEveryPatternTypeEqually()
     {
-        var definition = Assert.Single(new MarketSequenceDefinitionRegistry().GetAll());
+        var registry = new MarketSequenceDefinitionRegistry();
+        var definition = registry.Find("intraday-pattern-progression");
+        Assert.NotNull(definition);
         Assert.All(definition.Stages, x => Assert.Contains("*", x.AcceptedPatternTypes));
         Assert.DoesNotContain("fvg", definition.SequenceDefinitionId, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(registry.GetAll(), x => x.SequenceDefinitionId == "liquidity-sweep-to-breakout");
+        Assert.Contains(registry.GetAll(), x => x.SequenceDefinitionId == "breakout-failure");
+        Assert.All(registry.GetAll(), x => Assert.True(x.Stages.Count >= 2));
+    }
+
+    [Fact]
+    public void NamedSweepToBreakoutSequenceRequiresMatchingDirection()
+    {
+        var definition = new MarketSequenceDefinitionRegistry().Find("liquidity-sweep-to-breakout");
+        Assert.NotNull(definition);
+        var matching = Engine().Replay(definition,
+            [Observation("SWEEP", "LiquiditySweep", 0), Observation("BREAK", "RangeBreakout", 5)],
+            TestData.BaseTime.AddMinutes(6));
+        Assert.Contains(matching, x => x.State == MarketSequenceState.Successful);
+
+        var opposing = Engine().Replay(definition,
+            [Observation("SWEEP-2", "LiquiditySweep", 0),
+             Observation("BREAK-2", "RangeBreakout", 5, PatternDirection.Bearish)],
+            TestData.BaseTime.AddMinutes(6));
+        Assert.DoesNotContain(opposing, x => x.State == MarketSequenceState.Successful);
     }
 
     private static IMarketSequenceEngine Engine() => new MarketSequenceEngine(new LegacyUtcTradingSessionService());
     private static IReadOnlySet<string> Set(params string[] values) =>
         new HashSet<string>(values, StringComparer.OrdinalIgnoreCase);
-    private static UniversalMarketObservation Observation(string id, string type, int minute) =>
-        new(id, 1, type.ToLowerInvariant(), "1.0.0", type, "MES", null, "5m", PatternDirection.Bullish,
+    private static UniversalMarketObservation Observation(string id, string type, int minute,
+        PatternDirection direction = PatternDirection.Bullish) =>
+        new(id, 1, type.ToLowerInvariant(), "1.0.0", type, "MES", null, "5m", direction,
             TestData.BaseTime.AddMinutes(minute), TestData.BaseTime.AddMinutes(minute),
             PatternLifecycleState.Detected, "test/1", "{}", [], MarketDataQualityFlags.None, $"HASH-{id}");
     private static async Task<int> Count(PfaDatabase database, string table)

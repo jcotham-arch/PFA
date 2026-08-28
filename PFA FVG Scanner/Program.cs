@@ -22,6 +22,8 @@ using PFA_FVG_Scanner.Domain.Governance;
 using PFA_FVG_Scanner.Domain.Forward;
 using PFA_FVG_Scanner.Domain.Discovery;
 using PFA_FVG_Scanner.Domain.LivePilot;
+using PFA_FVG_Scanner.Domain.Modules;
+using PFA_FVG_Scanner.Domain.Agent;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
@@ -108,12 +110,18 @@ builder.Services.AddSingleton<MarketChartService>();
 builder.Services.AddSingleton<IMarketSequenceDefinitionRegistry, MarketSequenceDefinitionRegistry>();
 builder.Services.AddSingleton<IMarketSequenceEngine, MarketSequenceEngine>();
 builder.Services.AddSingleton<PatternSequenceReplayService>();
+builder.Services.AddSingleton<GenericPatternOutcomeReplayService>();
+builder.Services.AddSingleton<PatternResearchCampaignService>();
 builder.Services.AddSingleton<PropFirmCertificationEngine>();
 builder.Services.AddSingleton<CertificationCampaignEngine>();
 builder.Services.AddSingleton<CertificationCampaignRepository>();
 builder.Services.AddSingleton<CertificationCampaignService>();
 builder.Services.AddSingleton<LivePilotReadinessAuditor>();
 builder.Services.AddSingleton<LivePilotReadinessProjectionService>();
+builder.Services.AddSingleton<ProductModuleCatalog>();
+builder.Services.AddSingleton<ModuleEntitlementEvaluator>();
+builder.Services.AddSingleton<AgentTrainingDatasetBuilder>();
+builder.Services.AddSingleton<AgentTrainingReadinessService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES

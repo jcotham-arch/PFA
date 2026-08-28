@@ -67,7 +67,7 @@ namespace PFA_FVG_Scanner.Services
                 $"{Uri.EscapeDataString(symbol.ToUpperInvariant())}" +
                 $"?resolution=1min" +
                 $"&window_start.gte={startNs}" +
-                $"&window_start.lte={endNs}" +
+                $"&window_start.lte={endNs - 1}" +
                 $"&limit=50000" +
                 $"&sort=window_start.asc" +
                 $"&apiKey={Uri.EscapeDataString(_options.ApiKey)}";
@@ -173,7 +173,7 @@ namespace PFA_FVG_Scanner.Services
                         IsClosed = true
                     };
 
-                await _candleRepository.SaveAsync(
+                var inserted = await _candleRepository.SaveAsync(
                     candle,
                     "Massive Historical Backfill",
                     cancellationToken);
@@ -207,7 +207,7 @@ namespace PFA_FVG_Scanner.Services
                     candle, "Massive Historical Backfill", "AM_BACKFILL", DateTime.UtcNow,
                     $"BACKFILL|{startUtc:O}|{endUtc:O}", rawPayload, cancellationToken);
 
-                saved++;
+                if (inserted) saved++;
             }
 
             return new BackfillResult
