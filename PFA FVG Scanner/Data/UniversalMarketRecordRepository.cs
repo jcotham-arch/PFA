@@ -31,9 +31,29 @@ public sealed class UniversalMarketRecordRepository
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(outcome);
+        await SaveOutcomesAsync([outcome], cancellationToken);
+    }
+
+    public async Task SaveOutcomesAsync(IReadOnlyList<UniversalMarketOutcome> outcomes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(outcomes);
+        if (outcomes.Count == 0) return;
         await using var connection = _database.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        foreach (var outcome in outcomes)
+        {
+            ArgumentNullException.ThrowIfNull(outcome);
+            await InsertOutcomeAsync(connection, transaction, outcome, cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task InsertOutcomeAsync(SqliteConnection connection, SqliteTransaction transaction,
+        UniversalMarketOutcome outcome, CancellationToken cancellationToken)
+    {
 
         await using (var command = connection.CreateCommand())
         {
@@ -95,7 +115,6 @@ public sealed class UniversalMarketRecordRepository
             command.Parameters.AddWithValue("$payload", occurrence.PayloadJson);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<UniversalMarketObservation>> GetObservationsAsync(

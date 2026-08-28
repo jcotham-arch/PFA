@@ -52,6 +52,31 @@ public sealed class GenericPatternOutcomeTests
             [], definition, [5]));
     }
 
+    [Fact]
+    public async Task BatchSaveIsIdempotentForMultipleOutcomes()
+    {
+        using var factory = await TestDatabaseFactory.CreateAsync();
+        var repository = new UniversalMarketRecordRepository(factory.Database);
+        var first = Observation(PatternDirection.Bullish);
+        var second = first with { ObservationId = "OBS-GENERIC-2", Direction = PatternDirection.Bearish,
+            ContentHash = "hash-2" };
+        await repository.SaveObservationAsync(first, TestContext.Current.CancellationToken);
+        await repository.SaveObservationAsync(second, TestContext.Current.CancellationToken);
+        var definition = new InstrumentDefinitionRegistry().GetAll().Single(x => x.InstrumentId == "MES");
+        var candles = new[] { TestData.Candle(0, 100m, 101.25m, 99.75m, 101m, symbol: "MESU6") };
+        var outcomes = new[]
+        {
+            GenericPatternOutcomeReplayService.Calculate(first, candles, definition, [5])!,
+            GenericPatternOutcomeReplayService.Calculate(second, candles, definition, [5])!
+        };
+
+        await repository.SaveOutcomesAsync(outcomes, TestContext.Current.CancellationToken);
+        await repository.SaveOutcomesAsync(outcomes, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, (await repository.GetOutcomesAsync(limit: 10,
+            cancellationToken: TestContext.Current.CancellationToken)).Count);
+    }
+
     private static UniversalMarketObservation Observation(PatternDirection direction) => new(
         "OBS-GENERIC", 1, "liquidity-sweep", "capture-1.0.0", "LiquiditySweep", "MES", "MESU6", "1m",
         direction, TestData.BaseTime.AddMinutes(-1), TestData.BaseTime, PatternLifecycleState.Detected,

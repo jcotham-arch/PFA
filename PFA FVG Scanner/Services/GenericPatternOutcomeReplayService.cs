@@ -31,15 +31,15 @@ public sealed class GenericPatternOutcomeReplayService(
             ?? throw new ArgumentException($"Instrument '{instrumentId}' is not registered.");
         var observations = await records.GetReplayObservationsAsync(instrumentId, contractId, timeframe, cancellationToken);
         var oneMinute = await candles.GetRangeAsync(contractId, "1m", cancellationToken: cancellationToken);
-        var saved = 0;
+        var calculated = new List<UniversalMarketOutcome>(observations.Count);
         foreach (var observation in observations)
         {
             var outcome = Calculate(observation, oneMinute, definition, Horizons);
             if (outcome is null) continue;
-            await records.SaveOutcomeAsync(outcome, cancellationToken);
-            saved++;
+            calculated.Add(outcome);
         }
-        return new(instrumentId, contractId, timeframe, observations.Count, saved, DateTime.UtcNow);
+        await records.SaveOutcomesAsync(calculated, cancellationToken);
+        return new(instrumentId, contractId, timeframe, observations.Count, calculated.Count, DateTime.UtcNow);
     }
 
     public static UniversalMarketOutcome? Calculate(UniversalMarketObservation observation,
