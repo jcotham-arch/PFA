@@ -486,6 +486,7 @@ $RECYCLE.BIN/
 *.db-shm
 *.db-wal
 *.db-journal
+tmp/pdfs/
 
 # Local development configuration
 appsettings.Development.json
