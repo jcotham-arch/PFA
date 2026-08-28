@@ -44,6 +44,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateFeatureStateTablesAsync(connection);
             await CreateUniversalPatternReferenceTablesAsync(connection);
             await CreateUniversalMarketRecordTablesAsync(connection);
+            await MigrateUniversalOutcomeMetricIdentityAsync(connection);
             await CreateMarketSequenceTablesAsync(connection);
             await CreateStrategyRegistryTablesAsync(connection);
             await CreateGeneralResearchTablesAsync(connection);
@@ -58,12 +59,99 @@ namespace PFA_FVG_Scanner.Data
             await CreateForwardCampaignTablesAsync(connection);
             await CreateMachineDiscoveryTablesAsync(connection);
             await CreateCertificationCampaignTablesAsync(connection);
+            await CreateAgentResearchDatasetTablesAsync(connection);
+            await CreateAgentBaselineTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateAgentResearchDatasetTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS AgentResearchDatasets
+                (DatasetId TEXT PRIMARY KEY,DatasetVersion TEXT NOT NULL,DataRevision TEXT NOT NULL,
+                 AsOfUtc TEXT NOT NULL,TargetHorizonMinutes INTEGER NOT NULL,ExampleCount INTEGER NOT NULL,
+                 TrainCount INTEGER NOT NULL,ValidationCount INTEGER NOT NULL,TestCount INTEGER NOT NULL,
+                 EarliestEventUtc TEXT NOT NULL,LatestEventUtc TEXT NOT NULL,ContentHash TEXT NOT NULL,
+                 ManifestJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                CREATE TABLE IF NOT EXISTS AgentResearchExamples
+                (DatasetId TEXT NOT NULL,ExampleId TEXT NOT NULL,ObservationId TEXT NOT NULL,OutcomeId TEXT NOT NULL,
+                 InstrumentId TEXT NOT NULL,ContractId TEXT,Timeframe TEXT NOT NULL,ModuleId TEXT NOT NULL,
+                 PatternType TEXT NOT NULL,Direction TEXT NOT NULL,EventTimeUtc TEXT NOT NULL,
+                 FeatureKnownAtUtc TEXT NOT NULL,DecisionTimeUtc TEXT NOT NULL,OutcomeKnownAtUtc TEXT NOT NULL,
+                 Split TEXT NOT NULL,FeatureJson TEXT NOT NULL,LabelJson TEXT NOT NULL,SourceRevision TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,PRIMARY KEY(DatasetId,ExampleId),
+                 FOREIGN KEY(DatasetId) REFERENCES AgentResearchDatasets(DatasetId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('AGENT_RESEARCH_DATASET_V1',datetime('now'),
+                    'Add immutable point-in-time generic outcome research datasets and examples.');
+                CREATE INDEX IF NOT EXISTS IX_AgentResearchExamples_SplitTime
+                    ON AgentResearchExamples(DatasetId,Split,EventTimeUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_AgentResearchDatasets_NoUpdate BEFORE UPDATE ON AgentResearchDatasets
+                    BEGIN SELECT RAISE(ABORT,'Agent research datasets are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_AgentResearchDatasets_NoDelete BEFORE DELETE ON AgentResearchDatasets
+                    BEGIN SELECT RAISE(ABORT,'Agent research datasets are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_AgentResearchExamples_NoUpdate BEFORE UPDATE ON AgentResearchExamples
+                    BEGIN SELECT RAISE(ABORT,'Agent research examples are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_AgentResearchExamples_NoDelete BEFORE DELETE ON AgentResearchExamples
+                    BEGIN SELECT RAISE(ABORT,'Agent research examples are immutable'); END;
+                """;
+            await ExecuteAsync(connection, sql);
+        }
+
+        private static async Task CreateAgentBaselineTablesAsync(SqliteConnection connection)
+        {
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS AgentBaselineRuns
+                (RunId TEXT PRIMARY KEY,ModelVersion TEXT NOT NULL,DatasetId TEXT NOT NULL,
+                 DatasetContentHash TEXT NOT NULL,TargetName TEXT NOT NULL,TrainingSamples INTEGER NOT NULL,
+                 GroupCount INTEGER NOT NULL,TrainedAtUtc TEXT NOT NULL,ContentHash TEXT NOT NULL,RunJson TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 FOREIGN KEY(DatasetId) REFERENCES AgentResearchDatasets(DatasetId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('AGENT_BASELINE_RUNS_V1',datetime('now'),
+                    'Add immutable research-only baseline model runs over frozen agent datasets.');
+                CREATE INDEX IF NOT EXISTS IX_AgentBaselineRuns_Dataset ON AgentBaselineRuns(DatasetId,TrainedAtUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_AgentBaselineRuns_NoUpdate BEFORE UPDATE ON AgentBaselineRuns
+                    BEGIN SELECT RAISE(ABORT,'Agent baseline runs are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_AgentBaselineRuns_NoDelete BEFORE DELETE ON AgentBaselineRuns
+                    BEGIN SELECT RAISE(ABORT,'Agent baseline runs are immutable'); END;
+                """;
+            await ExecuteAsync(connection, sql);
+        }
+
+        private static async Task MigrateUniversalOutcomeMetricIdentityAsync(SqliteConnection connection)
+        {
+            await using var inspect = connection.CreateCommand();
+            inspect.CommandText = "PRAGMA table_info(UniversalOutcomeMetrics);";
+            var primaryKeyColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var reader = await inspect.ExecuteReaderAsync())
+                while (await reader.ReadAsync())
+                    if (reader.GetInt32(5) > 0) primaryKeyColumns.Add(reader.GetString(1));
+            if (primaryKeyColumns.Contains("Unit")) return;
+            const string sql = """
+                CREATE TABLE UniversalOutcomeMetricsV2
+                (OutcomeId TEXT NOT NULL,MetricName TEXT NOT NULL,HorizonMinutes INTEGER NOT NULL,
+                 Value TEXT NOT NULL,Unit TEXT NOT NULL,MeasuredAtUtc TEXT,
+                 PRIMARY KEY(OutcomeId,MetricName,HorizonMinutes,Unit),
+                 FOREIGN KEY(OutcomeId) REFERENCES UniversalMarketOutcomes(OutcomeId));
+                INSERT INTO UniversalOutcomeMetricsV2
+                    (OutcomeId,MetricName,HorizonMinutes,Value,Unit,MeasuredAtUtc)
+                SELECT OutcomeId,MetricName,HorizonMinutes,Value,Unit,MeasuredAtUtc FROM UniversalOutcomeMetrics;
+                DROP TABLE UniversalOutcomeMetrics;
+                ALTER TABLE UniversalOutcomeMetricsV2 RENAME TO UniversalOutcomeMetrics;
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('UNIVERSAL_OUTCOME_METRIC_UNIT_IDENTITY_1',datetime('now'),
+                    'Include Unit in universal outcome metric identity so points, ticks, and dollars coexist.');
+                """;
+            await ExecuteAsync(connection, sql);
         }
 
         private static async Task CreateCertificationCampaignTablesAsync(SqliteConnection connection)
@@ -670,7 +758,7 @@ namespace PFA_FVG_Scanner.Data
                     Value TEXT NOT NULL,
                     Unit TEXT NOT NULL,
                     MeasuredAtUtc TEXT,
-                    PRIMARY KEY (OutcomeId, MetricName, HorizonMinutes),
+                    PRIMARY KEY (OutcomeId, MetricName, HorizonMinutes, Unit),
                     FOREIGN KEY (OutcomeId) REFERENCES UniversalMarketOutcomes(OutcomeId)
                 );
                 CREATE TABLE IF NOT EXISTS UniversalOutcomeEvents

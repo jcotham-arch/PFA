@@ -121,6 +121,8 @@ builder.Services.AddSingleton<LivePilotReadinessProjectionService>();
 builder.Services.AddSingleton<ProductModuleCatalog>();
 builder.Services.AddSingleton<ModuleEntitlementEvaluator>();
 builder.Services.AddSingleton<AgentTrainingDatasetBuilder>();
+builder.Services.AddSingleton<GenericOutcomeDatasetService>();
+builder.Services.AddSingleton<AgentBaselineTrainingService>();
 builder.Services.AddSingleton<AgentTrainingReadinessService>();
 
 // ------------------------------------------------------------

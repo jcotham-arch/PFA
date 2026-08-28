@@ -31,3 +31,30 @@ public sealed class AgentTrainingDatasetBuilder
     }
     public static string Hash(string value)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }
+
+public sealed record GenericOutcomeDatasetRequest(DateTime AsOfUtc, int TargetHorizonMinutes = 15,
+    IReadOnlyList<string>? InstrumentIds = null);
+
+public sealed record GenericOutcomeResearchExample(
+    string ExampleId,string ObservationId,string OutcomeId,string InstrumentId,string? ContractId,
+    string Timeframe,string ModuleId,string PatternType,string Direction,DateTime EventTimeUtc,
+    DateTime FeatureKnownAtUtc,DateTime DecisionTimeUtc,DateTime OutcomeKnownAtUtc,string Split,
+    IReadOnlyDictionary<string,decimal> NumericFeatures,IReadOnlyDictionary<string,decimal> Labels,
+    string SourceRevision,string ContentHash);
+
+public sealed record GenericOutcomeDatasetManifest(
+    string DatasetId,string DatasetVersion,string DataRevision,DateTime AsOfUtc,int TargetHorizonMinutes,
+    int ExampleCount,int TrainCount,int ValidationCount,int TestCount,DateTime EarliestEventUtc,
+    DateTime LatestEventUtc,IReadOnlyList<string> InstrumentIds,IReadOnlyList<string> ModuleIds,
+    IReadOnlyList<string> FeatureNames,IReadOnlyList<string> LabelNames,string ContentHash,
+    bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
+
+public sealed record AgentBaselineTrainingRequest(string DatasetId,
+    string TargetName = "directionalCloseTicks");
+
+public sealed record AgentBaselineMetric(string Split,int SampleCount,decimal MeanAbsoluteError,
+    decimal RootMeanSquaredError,decimal DirectionalAccuracy,decimal MeanActual,decimal MeanPrediction);
+
+public sealed record AgentBaselineRun(string RunId,string ModelVersion,string DatasetId,string DatasetContentHash,
+    string TargetName,int TrainingSamples,int GroupCount,IReadOnlyList<AgentBaselineMetric> Metrics,
+    DateTime TrainedAtUtc,string ContentHash,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);

@@ -75,6 +75,11 @@ public sealed class GenericPatternOutcomeTests
 
         Assert.Equal(2, (await repository.GetOutcomesAsync(limit: 10,
             cancellationToken: TestContext.Current.CancellationToken)).Count);
+        await using var connection = factory.Database.CreateConnection();
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM UniversalOutcomeMetrics";
+        Assert.Equal(18L, Convert.ToInt64(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
     }
 
     [Fact]

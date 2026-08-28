@@ -1,0 +1,207 @@
+using System.Globalization;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using PFA_FVG_Scanner.Data;
+using PFA_FVG_Scanner.Domain.Agent;
+
+namespace PFA_FVG_Scanner.Services;
+
+public sealed class GenericOutcomeDatasetService(PfaDatabase database)
+{
+    public const string Version = "generic-outcome-dataset-1.0.0";
+
+    public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
+        CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var asOf = Utc(request.AsOfUtc);
+        if (asOf == default) throw new ArgumentException("A non-default AsOfUtc is required.");
+        if (request.TargetHorizonMinutes is not (5 or 15 or 60))
+            throw new ArgumentException("Target horizon must be 5, 15, or 60 minutes.");
+        var instruments = (request.InstrumentIds ?? []).Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim().ToUpperInvariant()).Distinct(StringComparer.Ordinal).Order().ToArray();
+        var candidates = await ReadCandidatesAsync(asOf, request.TargetHorizonMinutes, instruments, token);
+        if (candidates.Count < 3)
+            throw new InvalidOperationException("At least three point-in-time labeled examples are required.");
+
+        var trainEnd = Math.Max(1, (int)Math.Floor(candidates.Count * 0.70m));
+        var validationEnd = Math.Max(trainEnd + 1, (int)Math.Floor(candidates.Count * 0.85m));
+        validationEnd = Math.Min(validationEnd, candidates.Count - 1);
+        var examples = candidates.Select((value, index) => value with
+        {
+            Split = index < trainEnd ? "Train" : index < validationEnd ? "Validation" : "Test"
+        }).ToArray();
+        examples = examples.Select(x => x with { ContentHash = HashExample(x) }).ToArray();
+        var dataRevision = AgentTrainingDatasetBuilder.Hash(string.Join('|', examples.Select(x => x.SourceRevision)));
+        var datasetSeed = JsonSerializer.Serialize(new
+        {
+            Version, asOf, request.TargetHorizonMinutes, instruments,
+            Examples = examples.Select(x => new { x.ExampleId, x.ContentHash })
+        });
+        var contentHash = AgentTrainingDatasetBuilder.Hash(datasetSeed);
+        var datasetId = $"AGDS-{contentHash[..32]}";
+        var manifest = new GenericOutcomeDatasetManifest(datasetId, Version, dataRevision, asOf,
+            request.TargetHorizonMinutes, examples.Length, examples.Count(x => x.Split == "Train"),
+            examples.Count(x => x.Split == "Validation"), examples.Count(x => x.Split == "Test"),
+            examples[0].EventTimeUtc, examples[^1].EventTimeUtc,
+            examples.Select(x => x.InstrumentId).Distinct().Order().ToArray(),
+            examples.Select(x => x.ModuleId).Distinct().Order().ToArray(),
+            examples.SelectMany(x => x.NumericFeatures.Keys).Distinct().Order().ToArray(),
+            examples.SelectMany(x => x.Labels.Keys).Distinct().Order().ToArray(), contentHash);
+        await PersistAsync(manifest, examples, token);
+        return manifest;
+    }
+
+    public async Task<IReadOnlyList<GenericOutcomeDatasetManifest>> GetAllAsync(CancellationToken token = default)
+    {
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync(token);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ManifestJson FROM AgentResearchDatasets ORDER BY CreatedAtUtc DESC";
+        var values = new List<GenericOutcomeDatasetManifest>();
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+            values.Add(JsonSerializer.Deserialize<GenericOutcomeDatasetManifest>(reader.GetString(0))!);
+        return values;
+    }
+
+    private async Task<List<GenericOutcomeResearchExample>> ReadCandidatesAsync(DateTime asOf, int horizon,
+        IReadOnlyList<string> instruments, CancellationToken token)
+    {
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync(token);
+        await using var command = connection.CreateCommand();
+        var filter = instruments.Count == 0 ? "" :
+            $" AND o.InstrumentId IN ({string.Join(',', instruments.Select((_, index) => $"$instrument{index}"))})";
+        command.CommandText = $"""
+            SELECT o.ObservationId,o.Revision,o.ModuleId,o.ModuleVersion,o.PatternType,o.InstrumentId,
+                   o.ContractId,o.Timeframe,o.Direction,o.FormationTimeUtc,o.KnownAtUtc,o.PayloadJson,o.ContentHash,
+                   u.OutcomeId,u.OutcomeVersion,u.EvaluatedThroughUtc,
+                   close.Value,mfe.Value,mae.Value
+            FROM UniversalMarketObservations o
+            JOIN UniversalMarketOutcomes u ON u.ObservationId=o.ObservationId
+            JOIN UniversalOutcomeMetrics close ON close.OutcomeId=u.OutcomeId
+                AND close.MetricName='directional-close-change' AND close.HorizonMinutes=$horizon AND close.Unit='ticks'
+            JOIN UniversalOutcomeMetrics mfe ON mfe.OutcomeId=u.OutcomeId
+                AND mfe.MetricName='maximum-favorable-excursion' AND mfe.HorizonMinutes=$horizon AND mfe.Unit='ticks'
+            JOIN UniversalOutcomeMetrics mae ON mae.OutcomeId=u.OutcomeId
+                AND mae.MetricName='maximum-adverse-excursion' AND mae.HorizonMinutes=$horizon AND mae.Unit='ticks'
+            WHERE o.KnownAtUtc<u.EvaluatedThroughUtc AND u.EvaluatedThroughUtc<=$asOf {filter}
+            ORDER BY o.FormationTimeUtc,o.ObservationId;
+            """;
+        command.Parameters.AddWithValue("$horizon", horizon);
+        command.Parameters.AddWithValue("$asOf", asOf.ToString("O"));
+        for (var index = 0; index < instruments.Count; index++)
+            command.Parameters.AddWithValue($"$instrument{index}", instruments[index]);
+        var values = new List<GenericOutcomeResearchExample>();
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+        {
+            var observationId = reader.GetString(0);
+            var formation = Parse(reader.GetString(9));
+            var known = Parse(reader.GetString(10));
+            var outcomeKnown = Parse(reader.GetString(15));
+            if (known > asOf || outcomeKnown > asOf || outcomeKnown <= known) continue;
+            var features = ExtractNumericFeatures(reader.GetString(11));
+            features["direction"] = string.Equals(reader.GetString(8), "Bullish", StringComparison.OrdinalIgnoreCase) ? 1m : -1m;
+            features["timeframeMinutes"] = TimeframeMinutes(reader.GetString(7));
+            var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
+            {
+                ["directionalCloseTicks"] = Decimal(reader.GetString(16)),
+                ["maximumFavorableExcursionTicks"] = Decimal(reader.GetString(17)),
+                ["maximumAdverseExcursionTicks"] = Decimal(reader.GetString(18))
+            };
+            var sourceRevision = AgentTrainingDatasetBuilder.Hash(string.Join('|', observationId,
+                reader.GetInt32(1), reader.GetString(12), reader.GetString(13), reader.GetString(14)));
+            var exampleId = $"AGEX-{AgentTrainingDatasetBuilder.Hash($"{observationId}|{reader.GetString(13)}|{horizon}")[..32]}";
+            values.Add(new(exampleId, observationId, reader.GetString(13), reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetString(7), reader.GetString(2),
+                reader.GetString(4), reader.GetString(8), formation, known, known, outcomeKnown, "Unassigned",
+                features, labels, sourceRevision, ""));
+        }
+        return values;
+    }
+
+    private async Task PersistAsync(GenericOutcomeDatasetManifest manifest,
+        IReadOnlyList<GenericOutcomeResearchExample> examples, CancellationToken token)
+    {
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync(token);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(token);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT OR IGNORE INTO AgentResearchDatasets
+                (DatasetId,DatasetVersion,DataRevision,AsOfUtc,TargetHorizonMinutes,ExampleCount,TrainCount,
+                 ValidationCount,TestCount,EarliestEventUtc,LatestEventUtc,ContentHash,ManifestJson,CreatedAtUtc,
+                 CanActivateStrategy,CanRouteToRealBroker)
+                VALUES($id,$version,$revision,$asOf,$horizon,$examples,$train,$validation,$test,$earliest,$latest,
+                       $hash,$json,$created,0,0);
+                """;
+            Add(command, "$id", manifest.DatasetId); Add(command, "$version", manifest.DatasetVersion);
+            Add(command, "$revision", manifest.DataRevision); Add(command, "$asOf", manifest.AsOfUtc.ToString("O"));
+            Add(command, "$horizon", manifest.TargetHorizonMinutes); Add(command, "$examples", manifest.ExampleCount);
+            Add(command, "$train", manifest.TrainCount); Add(command, "$validation", manifest.ValidationCount);
+            Add(command, "$test", manifest.TestCount); Add(command, "$earliest", manifest.EarliestEventUtc.ToString("O"));
+            Add(command, "$latest", manifest.LatestEventUtc.ToString("O")); Add(command, "$hash", manifest.ContentHash);
+            Add(command, "$json", JsonSerializer.Serialize(manifest)); Add(command, "$created", DateTime.UtcNow.ToString("O"));
+            await command.ExecuteNonQueryAsync(token);
+        }
+        foreach (var example in examples)
+        {
+            await using var command = connection.CreateCommand(); command.Transaction = transaction;
+            command.CommandText = """
+                INSERT OR IGNORE INTO AgentResearchExamples
+                (DatasetId,ExampleId,ObservationId,OutcomeId,InstrumentId,ContractId,Timeframe,ModuleId,PatternType,
+                 Direction,EventTimeUtc,FeatureKnownAtUtc,DecisionTimeUtc,OutcomeKnownAtUtc,Split,FeatureJson,
+                 LabelJson,SourceRevision,ContentHash)
+                VALUES($dataset,$example,$observation,$outcome,$instrument,$contract,$timeframe,$module,$pattern,
+                       $direction,$event,$featureKnown,$decision,$outcomeKnown,$split,$features,$labels,$revision,$hash);
+                """;
+            Add(command, "$dataset", manifest.DatasetId); Add(command, "$example", example.ExampleId);
+            Add(command, "$observation", example.ObservationId); Add(command, "$outcome", example.OutcomeId);
+            Add(command, "$instrument", example.InstrumentId); Add(command, "$contract", (object?)example.ContractId ?? DBNull.Value);
+            Add(command, "$timeframe", example.Timeframe); Add(command, "$module", example.ModuleId);
+            Add(command, "$pattern", example.PatternType); Add(command, "$direction", example.Direction);
+            Add(command, "$event", example.EventTimeUtc.ToString("O")); Add(command, "$featureKnown", example.FeatureKnownAtUtc.ToString("O"));
+            Add(command, "$decision", example.DecisionTimeUtc.ToString("O")); Add(command, "$outcomeKnown", example.OutcomeKnownAtUtc.ToString("O"));
+            Add(command, "$split", example.Split); Add(command, "$features", JsonSerializer.Serialize(example.NumericFeatures));
+            Add(command, "$labels", JsonSerializer.Serialize(example.Labels)); Add(command, "$revision", example.SourceRevision);
+            Add(command, "$hash", example.ContentHash); await command.ExecuteNonQueryAsync(token);
+        }
+        await transaction.CommitAsync(token);
+    }
+
+    private static Dictionary<string, decimal> ExtractNumericFeatures(string json)
+    {
+        var values = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            Walk(document.RootElement, "geometry", values);
+        }
+        catch (JsonException) { }
+        return values;
+    }
+
+    private static void Walk(JsonElement element, string path, Dictionary<string, decimal> values)
+    {
+        if (values.Count >= 64) return;
+        if (element.ValueKind == JsonValueKind.Object)
+            foreach (var property in element.EnumerateObject()) Walk(property.Value, $"{path}.{property.Name}", values);
+        else if (element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var value)) values[path] = value;
+    }
+
+    private static string HashExample(GenericOutcomeResearchExample example) => AgentTrainingDatasetBuilder.Hash(
+        JsonSerializer.Serialize(new { example.ExampleId,example.ObservationId,example.OutcomeId,example.Split,
+            example.FeatureKnownAtUtc,example.DecisionTimeUtc,example.OutcomeKnownAtUtc,
+            example.NumericFeatures,example.Labels,example.SourceRevision }));
+    private static int TimeframeMinutes(string timeframe) => timeframe.ToLowerInvariant() switch
+    { "1m" => 1, "5m" => 5, "15m" => 15, "1h" => 60, _ => 0 };
+    private static decimal Decimal(string value) => decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture);
+    private static DateTime Parse(string value) => DateTime.Parse(value, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
+    private static DateTime Utc(DateTime value) => value.Kind switch
+    { DateTimeKind.Utc => value, DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc), _ => value.ToUniversalTime() };
+    private static void Add(SqliteCommand command, string name, object value) => command.Parameters.AddWithValue(name, value);
+}

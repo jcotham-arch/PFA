@@ -1,5 +1,8 @@
 using PFA_FVG_Scanner.Domain.Agent;
 using PFA_FVG_Scanner.Domain.Modules;
+using PFA_FVG_Scanner.Domain.Observations;
+using PFA_FVG_Scanner.Domain.Patterns;
+using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.Services;
 
 namespace PFA_FVG_Scanner.Tests;
@@ -56,6 +59,41 @@ public sealed class ProductModuleAndAgentTrainingTests
     [Fact]
     public async Task EmptyCorpusReadinessFailsClosedWithoutActivationOrRouting()
     {using var factory=await TestDatabaseFactory.CreateAsync();var readiness=await new AgentTrainingReadinessService(factory.Database).GetAsync(TestContext.Current.CancellationToken);Assert.Equal(0,readiness.Observations);Assert.False(readiness.SupervisedTrainingReady);Assert.False(readiness.CanActivateStrategy);Assert.False(readiness.CanRouteToRealBroker);}
+
+    [Fact]
+    public async Task GenericOutcomeDatasetIsImmutableDeterministicAndChronologicallySplit()
+    {
+        using var factory=await TestDatabaseFactory.CreateAsync();
+        var repository=new UniversalMarketRecordRepository(factory.Database);
+        for(var index=0;index<10;index++)
+        {
+            var known=Now.AddDays(-10+index);var observation=new UniversalMarketObservation($"OBS-{index}",1,
+                "liquidity-sweep","1.0.0","LiquiditySweep","MES","MESU6","5m",
+                index%2==0?PatternDirection.Bullish:PatternDirection.Bearish,known.AddMinutes(-5),known,
+                PatternLifecycleState.Detected,"test","{\"range\":5}",[],MarketDataQualityFlags.None,$"OH-{index}");
+            await repository.SaveObservationAsync(observation,TestContext.Current.CancellationToken);
+            var measured=known.AddMinutes(15);var outcome=new UniversalMarketOutcome($"OUT-{index}",observation.ObservationId,
+                "generic-forward-1.0.0",measured,1,"test","{}",
+                [new("directional-close-change",15,index-5,"ticks",measured),
+                 new("maximum-favorable-excursion",15,index+1,"ticks",measured),
+                 new("maximum-adverse-excursion",15,2,"ticks",measured)],[],MarketDataQualityFlags.None);
+            await repository.SaveOutcomeAsync(outcome,TestContext.Current.CancellationToken);
+        }
+        var service=new GenericOutcomeDatasetService(factory.Database);var request=new GenericOutcomeDatasetRequest(Now,15,["MES"]);
+        var first=await service.BuildAsync(request,TestContext.Current.CancellationToken);
+        var repeated=await service.BuildAsync(request,TestContext.Current.CancellationToken);
+        Assert.Equal(first.ContentHash,repeated.ContentHash);Assert.Equal(10,first.ExampleCount);
+        Assert.Equal(7,first.TrainCount);Assert.Equal(1,first.ValidationCount);Assert.Equal(2,first.TestCount);
+        Assert.False(first.CanActivateStrategy);Assert.False(first.CanRouteToRealBroker);
+        Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
+        var training=new AgentBaselineTrainingService(factory.Database);
+        var baseline=await training.TrainAsync(new(first.DatasetId),TestContext.Current.CancellationToken);
+        var baselineAgain=await training.TrainAsync(new(first.DatasetId),TestContext.Current.CancellationToken);
+        Assert.Equal(baseline.ContentHash,baselineAgain.ContentHash);Assert.Equal(7,baseline.TrainingSamples);
+        Assert.Equal(new[]{"Train","Validation","Test"},baseline.Metrics.Select(x=>x.Split));
+        Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
+        Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));
+    }
 
     private static AgentTrainingExample Example()=>new("EX","D","MES","MESU6","5m",Now.AddHours(-2),Now.AddHours(-2).AddMinutes(5),Now.AddHours(-1),Now.AddMinutes(-1),new Dictionary<string,decimal>{{"range",5}},["liquidity-sweep"],["initial-observation"],1.2m,"REV",AgentTrainingDatasetBuilder.Hash("EX"));
 }
