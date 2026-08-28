@@ -82,8 +82,9 @@ public sealed class PhaseSevenSequenceIntelligenceTests
             [Observation("A", "Formation", 0), Observation("B", "Sweep", 5), Observation("C", "Reclaim", 10)],
             TestData.BaseTime.AddMinutes(11)), x => x.State == MarketSequenceState.Successful);
         var repository = new MarketSequenceRepository(factory.Database);
-        await repository.SaveAsync(Definition, instance, TestContext.Current.CancellationToken);
-        await repository.SaveAsync(Definition, instance, TestContext.Current.CancellationToken);
+        await repository.SaveManyAsync([(Definition, instance), (Definition, instance)],
+            TestContext.Current.CancellationToken);
+        await repository.SaveManyAsync([(Definition, instance)], TestContext.Current.CancellationToken);
         Assert.Equal(1, await Count(factory.Database, "MarketSequenceInstances"));
         Assert.Equal(3, await Count(factory.Database, "MarketSequenceMembers"));
         Assert.Equal(2, await Count(factory.Database, "MarketSequenceTransitions"));

@@ -11,9 +11,27 @@ public sealed class MarketSequenceRepository
     public async Task SaveAsync(MarketSequenceDefinition definition, MarketSequenceInstance instance,
         CancellationToken cancellationToken = default)
     {
+        await SaveManyAsync([(definition, instance)], cancellationToken);
+    }
+
+    public async Task SaveManyAsync(
+        IReadOnlyList<(MarketSequenceDefinition Definition, MarketSequenceInstance Instance)> sequences,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sequences);
+        if (sequences.Count == 0) return;
         await using var connection = _database.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var sequence in sequences)
+            await InsertAsync(connection, transaction, sequence.Definition, sequence.Instance, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task InsertAsync(SqliteConnection connection, SqliteTransaction transaction,
+        MarketSequenceDefinition definition, MarketSequenceInstance instance,
+        CancellationToken cancellationToken)
+    {
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -85,6 +103,5 @@ public sealed class MarketSequenceRepository
             command.Parameters.AddWithValue("$confidence", transition.value.PointInTimeConfidence.ToString(System.Globalization.CultureInfo.InvariantCulture));
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        await transaction.CommitAsync(cancellationToken);
     }
 }

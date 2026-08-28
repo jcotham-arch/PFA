@@ -66,21 +66,18 @@ public sealed class PatternSequenceReplayService(
             }
         }
 
-        foreach (var observation in detected.Values)
-            await observations.SaveObservationAsync(observation, cancellationToken);
+        await observations.SaveObservationsAsync(detected.Values.ToArray(), cancellationToken);
 
         var ordered = detected.Values.OrderBy(x => x.FormationTimeUtc).ToArray();
-        var sequenceCount = 0;
+        var replayedSequences = new List<(MarketSequenceDefinition Definition, MarketSequenceInstance Instance)>();
         foreach (var definition in definitions.GetAll())
         foreach (var instance in sequenceEngine.Replay(definition, ordered,
                      ordered.Length == 0 ? DateTime.UtcNow : ordered[^1].KnownAtUtc))
-        {
-            await sequences.SaveAsync(definition, instance, cancellationToken);
-            sequenceCount++;
-        }
+            replayedSequences.Add((definition, instance));
+        await sequences.SaveManyAsync(replayedSequences, cancellationToken);
 
         return new(instrumentId, contractId, timeframe, bars.Count,
-            detected.Count, counts, sequenceCount, DateTime.UtcNow);
+            detected.Count, counts, replayedSequences.Count, DateTime.UtcNow);
     }
 
     private async Task<IReadOnlyList<CanonicalBar>> GetLegacyBarsAsync(string instrumentId, string contractId,

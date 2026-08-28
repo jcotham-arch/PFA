@@ -20,10 +20,22 @@ public sealed class UniversalMarketRecordRepository
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(observation);
+        await SaveObservationsAsync([observation], cancellationToken);
+    }
+
+    public async Task SaveObservationsAsync(IReadOnlyList<UniversalMarketObservation> observations,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(observations);
+        if (observations.Count == 0) return;
         await using var connection = _database.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
-        await InsertObservationAsync(connection, transaction, observation, cancellationToken);
+        foreach (var observation in observations)
+        {
+            ArgumentNullException.ThrowIfNull(observation);
+            await InsertObservationAsync(connection, transaction, observation, cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
     }
 
