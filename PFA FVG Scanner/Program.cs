@@ -124,6 +124,7 @@ builder.Services.AddSingleton<AgentTrainingDatasetBuilder>();
 builder.Services.AddSingleton<GenericOutcomeDatasetService>();
 builder.Services.AddSingleton<AgentBaselineTrainingService>();
 builder.Services.AddSingleton<AgentTrainingReadinessService>();
+builder.Services.AddSingleton<PatternTradeResearchService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES

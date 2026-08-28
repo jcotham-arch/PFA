@@ -61,12 +61,35 @@ namespace PFA_FVG_Scanner.Data
             await CreateCertificationCampaignTablesAsync(connection);
             await CreateAgentResearchDatasetTablesAsync(connection);
             await CreateAgentBaselineTablesAsync(connection);
+            await CreatePatternTradeResearchTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreatePatternTradeResearchTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS PatternTradeResearchRuns
+                (RunId TEXT PRIMARY KEY,EngineVersion TEXT NOT NULL,AsOfUtc TEXT NOT NULL,ObservationCount INTEGER NOT NULL,
+                 HypothesisCount INTEGER NOT NULL,SampleCount INTEGER NOT NULL,ContentHash TEXT NOT NULL,RunJson TEXT NOT NULL,
+                 CreatedAtUtc TEXT NOT NULL,CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                CREATE TABLE IF NOT EXISTS PatternTradeResearchSamples
+                (RunId TEXT NOT NULL,SampleId TEXT NOT NULL,HypothesisId TEXT NOT NULL,ObservationId TEXT NOT NULL,
+                 InstrumentId TEXT NOT NULL,ModuleId TEXT NOT NULL,Split TEXT NOT NULL,Outcome TEXT NOT NULL,NetR TEXT,
+                 ContentHash TEXT NOT NULL,SampleJson TEXT NOT NULL,PRIMARY KEY(RunId,SampleId),
+                 FOREIGN KEY(RunId) REFERENCES PatternTradeResearchRuns(RunId));
+                CREATE INDEX IF NOT EXISTS IX_PatternTradeResearchSamples_Hypothesis
+                    ON PatternTradeResearchSamples(RunId,HypothesisId,Split,Outcome);
+                CREATE TRIGGER IF NOT EXISTS TR_PatternTradeResearchRuns_NoUpdate BEFORE UPDATE ON PatternTradeResearchRuns
+                    BEGIN SELECT RAISE(ABORT,'Pattern trade research runs are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_PatternTradeResearchRuns_NoDelete BEFORE DELETE ON PatternTradeResearchRuns
+                    BEGIN SELECT RAISE(ABORT,'Pattern trade research runs are immutable');END;
+                """;await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateAgentResearchDatasetTablesAsync(SqliteConnection connection)

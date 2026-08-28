@@ -2,9 +2,9 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const number=value=>Number(value??0).toLocaleString();
 document.getElementById('baselineMeta').insertAdjacentHTML('afterend','<p id="promotionGate" class="baseline-warning">Promotion gate awaiting evidence.</p>');
 async function hydrate(){
-  const [moduleResponse,trainingResponse,datasetResponse,baselineResponse]=await Promise.all([
+  const [moduleResponse,trainingResponse,datasetResponse,baselineResponse,patternTradeResponse]=await Promise.all([
     fetch('/api/product/modules'),fetch('/api/product/modules/agent-training-readiness'),
-    fetch('/api/agent/research-datasets'),fetch('/api/agent/baseline-runs')]);
+    fetch('/api/agent/research-datasets'),fetch('/api/agent/baseline-runs'),fetch('/api/research/pattern-trades')]);
   if(!moduleResponse.ok)throw new Error(`Module API ${moduleResponse.status}`);
   const modules=await moduleResponse.json();
   document.getElementById('moduleTotal').textContent=`${modules.length} modules`;
@@ -27,6 +27,9 @@ async function hydrate(){
   if(baselineResponse.ok){
     const runs=await baselineResponse.json();
     if(runs.length){const run=runs[0];document.getElementById('baselineState').textContent='EVALUATED';document.getElementById('baselineMeta').textContent=`${esc(run.modelVersion)} · ${number(run.trainingSamples)} training samples`;if(run.promotionGate)document.getElementById('promotionGate').textContent=`${run.promotionGate.status}: ${run.promotionGate.candidate} · ${run.promotionGate.reasons.join(' ')}`;document.getElementById('baselineMetrics').innerHTML=run.metrics.map(metric=>`<tr><td>${esc(metric.split)}</td><td>${number(metric.sampleCount)}</td><td>${Number(metric.meanAbsoluteError).toFixed(3)} ticks</td><td>${(Number(metric.directionalAccuracy)*100).toFixed(1)}%</td></tr>`).join('');if(run.walkForwardMetrics?.length)document.getElementById('walkForwardMetrics').innerHTML=run.walkForwardMetrics.map(metric=>`<tr><td>${number(metric.fold)} · ${number(metric.embargoMinutes)}m embargo</td><td>${number(metric.trainingSamples)}</td><td>${number(metric.validationSamples)}</td><td>${Number(metric.meanAbsoluteError).toFixed(3)} ticks</td><td>${(Number(metric.directionalAccuracy)*100).toFixed(1)}%</td></tr>`).join('');if(run.variantMetrics?.length)document.getElementById('variantMetrics').innerHTML=run.variantMetrics.map(metric=>`<tr><td>${esc(metric.variant)}</td><td>${esc(metric.split)}</td><td>${Number(metric.meanAbsoluteError).toFixed(3)} ticks</td><td>${(Number(metric.directionalAccuracy)*100).toFixed(1)}%</td></tr>`).join('');if(run.segmentMetrics?.length)document.getElementById('segmentMetrics').innerHTML=run.segmentMetrics.map(metric=>`<tr><td>${esc(metric.instrumentId)}</td><td>${esc(metric.split)}</td><td>${number(metric.sampleCount)}</td><td>${Number(metric.meanAbsoluteError).toFixed(3)} ticks</td><td>${(Number(metric.directionalAccuracy)*100).toFixed(1)}%</td></tr>`).join('');}
+  }
+  if(patternTradeResponse.ok){
+    const runs=await patternTradeResponse.json();if(runs.length){const run=runs[0];document.getElementById('patternTradeState').textContent='EVALUATED';document.getElementById('patternTradeMeta').textContent=`${number(run.observationCount)} observations · ${number(run.hypothesisCount)} hypotheses · ${number(run.sampleCount)} cost-adjusted samples`;const validation=run.summaries.filter(x=>x.split==='Validation').sort((a,b)=>Number(b.meanNetR)-Number(a.meanNetR)).slice(0,10);document.getElementById('patternTradeRows').innerHTML=validation.map(metric=>{const test=run.summaries.find(x=>x.hypothesisId===metric.hypothesisId&&x.split==='Test');return `<tr><td>${esc(metric.moduleId)}</td><td>${esc(metric.directionPolicy)}</td><td>${number(metric.targetR)}R / ${number(metric.maximumHoldingMinutes)}m</td><td>${Number(metric.meanNetR).toFixed(3)}R</td><td>${test?Number(test.meanNetR).toFixed(3)+'R':'—'}</td></tr>`}).join('');}
   }
 }
 hydrate().catch(error=>{document.getElementById('moduleCatalog').innerHTML=`<p>${esc(error.message)}</p>`});

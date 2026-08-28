@@ -1,0 +1,80 @@
+using PFA_FVG_Scanner.Domain.Patterns;
+using PFA_FVG_Scanner.Domain.Patterns.Breakouts;
+using PFA_FVG_Scanner.Domain.Patterns.Liquidity;
+using PFA_FVG_Scanner.Domain.Research;
+using PFA_FVG_Scanner.Domain.Timeline;
+using PFA_FVG_Scanner.Domain.Instruments;
+using PFA_FVG_Scanner.Domain.Observations;
+using PFA_FVG_Scanner.Services;
+
+namespace PFA_FVG_Scanner.Tests;
+
+public sealed class PatternTradeHypothesisEngineTests
+{
+    private static readonly DateTime Now=new(2026,8,1,14,0,0,DateTimeKind.Utc);
+
+    [Fact]
+    public void SweepHypothesisUsesNextBarStructuralRiskAndFirstTargetHit()
+    {
+        var result=PatternTradeHypothesisEngine.Evaluate(Definition("liquidity-sweep"),Sweep(),
+            [Bar(0,100,101.5m,99.5m,101)],.25m);
+        Assert.Equal(HypothesisExitOutcome.Target,result.Outcome);Assert.Equal(1m,result.GrossR);
+        Assert.Equal(100m,result.EntryPrice);Assert.Equal(98.75m,result.StopPrice);Assert.Equal(101.25m,result.TargetPrice);
+        Assert.False(result.CanActivateStrategy);Assert.False(result.CanRouteToRealBroker);
+    }
+
+    [Fact]
+    public void SameMinuteStopAndTargetRemainsAmbiguous()
+    {
+        var result=PatternTradeHypothesisEngine.Evaluate(Definition("liquidity-sweep"),Sweep(),
+            [Bar(0,100,101.5m,98.5m,100)],.25m);
+        Assert.Equal(HypothesisExitOutcome.Ambiguous,result.Outcome);Assert.Null(result.NetR);
+        Assert.Contains("intrabar order is unknown",result.Reason);
+    }
+
+    [Fact]
+    public void FailedBreakoutCanTestOpposingReversalWithoutChangingPatternFact()
+    {
+        var observation=Sweep() with{ModuleId="failed-breakout",PatternType="FailedBreakout",
+            Direction=PatternDirection.Bullish,Geometry=new RangeBreakoutGeometry(RangeBoundarySide.Upper,98,101,102,100,1,false,[])};
+        var definition=Definition("failed-breakout") with{DirectionPolicy=HypothesisDirectionPolicy.OpposePatternDirection};
+        var result=PatternTradeHypothesisEngine.Evaluate(definition,observation,[Bar(0,100,100.5m,97,98)],.25m);
+        Assert.Equal("Bearish",result.Direction);Assert.Equal(HypothesisExitOutcome.Target,result.Outcome);
+        Assert.Equal(PatternDirection.Bullish,observation.Direction);
+    }
+
+    [Fact]
+    public async Task ResearchRunUsesChronologicalSplitsAndPersistsImmutableSamples()
+    {
+        using var factory=await TestDatabaseFactory.CreateAsync();var repository=new PFA_FVG_Scanner.Data.UniversalMarketRecordRepository(factory.Database);
+        for(var index=0;index<10;index++)
+        {
+            var known=Now.AddMinutes(index*20);await repository.SaveObservationAsync(new($"OBS-{index}",1,"liquidity-sweep","1",
+                "LiquiditySweep","MES","MESU6","5m",PatternDirection.Bullish,known.AddMinutes(-5),known,
+                PatternLifecycleState.Detected,"test","{\"geometry\":{\"SweepExtreme\":99}}",[],MarketDataQualityFlags.None,$"H-{index}"),TestContext.Current.CancellationToken);
+            await using var connection=factory.Database.CreateConnection();await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using var command=connection.CreateCommand();command.CommandText="""
+                INSERT INTO CanonicalResolvedResearchBars
+                (CanonicalBarId,InstrumentId,Timeframe,OpenTimeUtc,CloseTimeUtc,Open,High,Low,Close,Volume)
+                VALUES($id,'MES','1m',$openTime,$closeTime,'100','101.5','99.5','101','100');
+                """;command.Parameters.AddWithValue("$id",$"BAR-{index}");command.Parameters.AddWithValue("$openTime",known.ToString("O"));
+            command.Parameters.AddWithValue("$closeTime",known.AddMinutes(1).ToString("O"));await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+        var service=new PatternTradeResearchService(factory.Database,new InstrumentDefinitionRegistry());
+        var run=await service.RunAsync(new(Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1),TestContext.Current.CancellationToken);
+        Assert.Equal(10,run.ObservationCount);Assert.Equal(10,run.SampleCount);
+        Assert.Equal(7,run.Summaries.Single(x=>x.Split=="Train").Samples);
+        Assert.Equal(1,run.Summaries.Single(x=>x.Split=="Validation").Samples);
+        Assert.Equal(2,run.Summaries.Single(x=>x.Split=="Test").Samples);
+        Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
+    }
+
+    private static PatternTradeHypothesisDefinition Definition(string module)=>new($"test-{module}","1",module,
+        HypothesisDirectionPolicy.PatternDirection,"next-one-minute-open","structural-invalidation",1m,15,1m);
+    private static MarketPatternObservation Sweep()=>new("OBS","liquidity-sweep","1","LiquiditySweep","MES","MESU6","5m",
+        PatternDirection.Bullish,Now.AddMinutes(-5),Now,PatternLifecycleState.Detected,
+        new LiquiditySweepGeometry(LiquiditySide.SellSide,99.25m,99m,.25m,true,1,[]),[],MarketDataQualityFlags.None);
+    private static CanonicalBar Bar(int minute,decimal open,decimal high,decimal low,decimal close)=>new($"BAR-{minute}",1,
+        "MES","MESU6","MESU6","1m",Now.AddMinutes(minute),Now.AddMinutes(minute+1),open,high,low,close,100,true,
+        "S",DateOnly.FromDateTime(Now),"1","1",CorrectionState.Original,MarketDataQualityFlags.None,Now,$"H-{minute}");
+}
