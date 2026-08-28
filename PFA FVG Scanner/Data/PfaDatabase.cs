@@ -57,12 +57,44 @@ namespace PFA_FVG_Scanner.Data
             await CreateGovernanceTablesAsync(connection);
             await CreateForwardCampaignTablesAsync(connection);
             await CreateMachineDiscoveryTablesAsync(connection);
+            await CreateCertificationCampaignTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateCertificationCampaignTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS CertificationCampaigns
+                (CampaignId TEXT PRIMARY KEY,StrategyId TEXT NOT NULL,StrategyVersion TEXT NOT NULL,
+                 EvidenceRevision TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,ContentHash TEXT NOT NULL,
+                 CampaignJson TEXT NOT NULL,CanPromoteStrategy INTEGER NOT NULL CHECK(CanPromoteStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                CREATE TABLE IF NOT EXISTS CertificationRulePacks
+                (CampaignId TEXT NOT NULL,RulePackHash TEXT NOT NULL,FirmId TEXT NOT NULL,ProgramId TEXT NOT NULL,
+                 RuleVersion TEXT NOT NULL,SourceReference TEXT NOT NULL,SourceContentHash TEXT NOT NULL,
+                 IsOfficiallyVerified INTEGER NOT NULL,RulePackJson TEXT NOT NULL,
+                 PRIMARY KEY(CampaignId,RulePackHash),FOREIGN KEY(CampaignId) REFERENCES CertificationCampaigns(CampaignId));
+                CREATE TABLE IF NOT EXISTS CertificationResults
+                (CampaignId TEXT NOT NULL,ResultId TEXT NOT NULL,RulePackHash TEXT NOT NULL,Status TEXT NOT NULL,
+                 EvaluatedAtUtc TEXT NOT NULL,ContentHash TEXT NOT NULL,ResultJson TEXT NOT NULL,
+                 CanPromoteStrategy INTEGER NOT NULL CHECK(CanPromoteStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 PRIMARY KEY(CampaignId,ResultId),FOREIGN KEY(CampaignId) REFERENCES CertificationCampaigns(CampaignId));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('PHASE22_CERTIFICATION_CAMPAIGNS_1',datetime('now'),
+                    'Add immutable sandbox-only multi-rule-pack certification campaigns and results.');
+                CREATE INDEX IF NOT EXISTS IX_CertificationResults_Status ON CertificationResults(Status,EvaluatedAtUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_CertificationCampaigns_NoUpdate BEFORE UPDATE ON CertificationCampaigns BEGIN SELECT RAISE(ABORT,'Certification campaigns are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_CertificationCampaigns_NoDelete BEFORE DELETE ON CertificationCampaigns BEGIN SELECT RAISE(ABORT,'Certification campaigns are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_CertificationRulePacks_NoUpdate BEFORE UPDATE ON CertificationRulePacks BEGIN SELECT RAISE(ABORT,'Certification rule packs are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS TR_CertificationResults_NoUpdate BEFORE UPDATE ON CertificationResults BEGIN SELECT RAISE(ABORT,'Certification results are immutable'); END;
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task CreateMachineDiscoveryTablesAsync(SqliteConnection connection)

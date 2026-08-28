@@ -36,6 +36,11 @@ public sealed class CertificationDashboardController(
             SELECT ModuleId,COUNT(*) ObservationCount,MIN(FormationTimeUtc) EarliestUtc,MAX(FormationTimeUtc) LatestUtc
             FROM UniversalMarketObservations GROUP BY ModuleId ORDER BY ModuleId
             """,token);
+        var certificationResults=await Rows(connection,"""
+            SELECT c.CampaignId,c.StrategyId,c.StrategyVersion,r.Status,r.EvaluatedAtUtc,r.ResultId
+            FROM CertificationCampaigns c JOIN CertificationResults r ON r.CampaignId=c.CampaignId
+            ORDER BY r.EvaluatedAtUtc DESC LIMIT 25
+            """,token);
         return Ok(new
         {
             generatedAtUtc=DateTime.UtcNow,mode="CertificationSandbox",startingBalance=50000m,realBrokerRoutes=false,liveCredentials=false,
@@ -47,6 +52,9 @@ public sealed class CertificationDashboardController(
             persistedSequences=await Count(connection,"MarketSequenceInstances",null,token),
             evidence=new{generalHypotheses=await Count(connection,"GeneralResearchHypotheses",null,token),positiveHypotheses=await Count(connection,"GeneralResearchHypotheses","Status='Positive'",token),crossDaySignatures=await Count(connection,"GeneralCrossDaySignatureEvidence",null,token),stableWalkForwardReports=stableReports.Count,stableForwardComparisons=await Count(connection,"ForwardComparisons","Status='Stable'",token)},
             strategies=new{registered=validated,eligibleForCertification=eligible,gateMessage=eligible.Count==0?"No strategy is currently linked to both a stable walk-forward report and ValidationComplete registry status. Backtest candidates remain research-only.":$"{eligible.Count} strategy version(s) meet the certification entry gate."},
+            certification=new{campaigns=await Count(connection,"CertificationCampaigns",null,token),results=certificationResults,
+                payoutEligible=await Count(connection,"CertificationResults","Status='PayoutEligible'",token),
+                liveRouting=false,automaticPromotion=false},
             sandbox=new{accounts=await Count(connection,"SandboxLedgerEvents","EventType='AccountCreated'",token),orders=await Count(connection,"SandboxLedgerEvents","EventType='OrderSubmitted'",token),fills=await Count(connection,"SandboxLedgerEvents","EventType='FillRecorded'",token),closedTrades=await Count(connection,"SandboxLedgerEvents","EventType='TradeClosed'",token),forwardCampaigns=await Count(connection,"ForwardCampaigns",null,token)},
             realism=new{executionEngine=CertificationExecutionEngine.Version,ruleEngine=PropFirmCertificationEngine.Version,reconciliationEngine=CertificationReconciliationEngine.Version,profile=PropFirmRulePackCatalog.PfaConservative50K(DateTime.UnixEpoch),features=new[]{"seeded latency and jitter","bid/ask execution","queue-ahead uncertainty","participation-limited partial fills","volatility and size impact","commissions","stale-feed rejection","venue outages","intraday trailing drawdown","daily loss and contract limits","news/session restrictions","automation permissions","payout gates","restart reconciliation"}}
         });

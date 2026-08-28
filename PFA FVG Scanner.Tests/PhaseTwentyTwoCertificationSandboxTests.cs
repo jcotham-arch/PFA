@@ -2,6 +2,7 @@ using PFA_FVG_Scanner.Domain.Certification;
 using PFA_FVG_Scanner.Domain.Instruments;
 using PFA_FVG_Scanner.Domain.Sandbox;
 using PFA_FVG_Scanner.Services;
+using PFA_FVG_Scanner.Data;
 
 namespace PFA_FVG_Scanner.Tests;
 
@@ -50,6 +51,18 @@ public sealed class PhaseTwentyTwoCertificationSandboxTests
     public void IncompleteOrFutureEvidenceCannotProduceFantasyPass()
     {var pack=PropFirmRulePackCatalog.PfaConservative50K(Now.AddDays(-1));var days=WinningDays(pack,10,350m);days[0]=days[0] with{OperationalDataComplete=false};Assert.Equal(PropAccountCertificationStatus.OperationallyInvalid,Rules.Evaluate("A",pack,days,Now.AddDays(20)).Status);days=WinningDays(pack,10,350m);days[0]=days[0] with{KnownAtUtc=Now.AddDays(30)};Assert.Throws<InvalidOperationException>(()=>Rules.Evaluate("A",pack,days,Now.AddDays(20)));}
 
+    [Fact]
+    public void CampaignEvaluatesEveryFrozenPackWithoutPromotionOrLiveRouting()
+    {var first=PropFirmRulePackCatalog.PfaConservative50K(Now.AddDays(-1));var second=first with{FirmId="PFA-INTERNAL-B",ProgramId="CERTIFICATION-B",SourceReference="internal-design:PFA-conservative-B",SourceContentHash=Hash("B")};var request=new CertificationCampaignRequest("CAMPAIGN","STRATEGY","1.0.0","WF-STABLE",[first,second],WinningDays(first,10,350m),Now.AddDays(20));var result=new CertificationCampaignEngine(Rules).Evaluate(request);Assert.Equal(2,result.Results.Count);Assert.All(result.Results,x=>Assert.Equal(PropAccountCertificationStatus.PayoutEligible,x.Status));Assert.False(result.CanPromoteStrategy);Assert.False(result.CanRouteToRealBroker);}
+
+    [Fact]
+    public void CampaignRejectsUnverifiedOrDuplicateRulePackSnapshots()
+    {var pack=PropFirmRulePackCatalog.PfaConservative50K(Now.AddDays(-1));var unverified=new CertificationCampaignRequest("C1","S","1","WF",[pack with{IsOfficiallyVerified=false}],WinningDays(pack,1,100m),Now.AddDays(20));Assert.Throws<InvalidOperationException>(()=>new CertificationCampaignEngine(Rules).Evaluate(unverified));var duplicate=unverified with{CampaignId="C2",RulePacks=[pack,pack]};Assert.Throws<ArgumentException>(()=>new CertificationCampaignEngine(Rules).Evaluate(duplicate));}
+
+    [Fact]
+    public async Task CampaignPersistenceIsIdempotentImmutableAndSandboxOnly()
+    {var token=TestContext.Current.CancellationToken;using var factory=await TestDatabaseFactory.CreateAsync();var repository=new CertificationCampaignRepository(factory.Database);var pack=PropFirmRulePackCatalog.PfaConservative50K(Now.AddDays(-1));var request=new CertificationCampaignRequest("PERSIST","STRATEGY","1.0.0","WF-STABLE",[pack],WinningDays(pack,10,350m),Now.AddDays(20));var result=new CertificationCampaignEngine(Rules).Evaluate(request);await repository.SaveAsync(request,result,token);await repository.SaveAsync(request,result,token);await using var connection=factory.Database.CreateConnection();await connection.OpenAsync(token);Assert.Equal(1L,await Scalar(connection,"SELECT COUNT(*) FROM CertificationCampaigns",token));Assert.Equal(1L,await Scalar(connection,"SELECT COUNT(*) FROM CertificationResults",token));Assert.Equal(0L,await Scalar(connection,"SELECT SUM(CanPromoteStrategy+CanRouteToRealBroker) FROM CertificationResults",token));await Assert.ThrowsAsync<InvalidOperationException>(()=>repository.SaveAsync(request,result with{ContentHash=Hash("conflict")},token));}
+
     private static ExecutionRealismProfile Profile()=>new("PFA-CERT","1.0.0",42,100,0,2000,1,1,.25m,.25m,.5m,0,.5m,1.25m,false,true,false);
     private static CertificationOrderRequest Order(int quantity=1,SandboxOrderType type=SandboxOrderType.Market,decimal? limit=null,decimal? stop=null)=>new("ORDER","A","S","1","MES","MESU6",SandboxOrderSide.Buy,type,quantity,limit,stop,Now,"SIGNAL","GOVERNANCE");
     private static CertificationMarketEvent Event(string id,long sequence,DateTime known,bool available,int lastSize=10)=>new(id,"MES","MESU6",sequence,known.AddMilliseconds(-10),known,4999.75m,5000.00m,10,10,5000m,lastSize,1,available,"REV-1");
@@ -57,4 +70,6 @@ public sealed class PhaseTwentyTwoCertificationSandboxTests
     private static InstrumentDefinition Instrument()=>new InstrumentDefinitionRegistry().GetAll().Single(x=>x.InstrumentId=="MES");
     private static List<PropTradingDayResult> WinningDays(PropFirmRulePack pack,int count,decimal net){var list=new List<PropTradingDayResult>();var balance=pack.StartingBalance;for(var i=0;i<count;i++){var start=balance;balance+=net;list.Add(new(DateOnly.FromDateTime(Now.AddDays(i)),start,balance,balance,start+net,start-100,net+10,10,1,2,false,false,PropAutomationMode.AutomatedExecutionPermitted,true,$"DAY-{i}",Now.AddDays(i+1)));}return list;}
     private static void Rechain(List<PropTradingDayResult> days){for(var i=1;i<days.Count;i++){var start=days[i-1].EndBalance;var net=days[i].GrossProfitLoss-days[i].Commissions;days[i]=days[i] with{StartBalance=start,EndBalance=start+net,EndEquity=start+net,IntradayHighEquity=start+Math.Max(0,net),IntradayLowEquity=start-100};}}
+    private static string Hash(string value)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
+    private static async Task<long> Scalar(Microsoft.Data.Sqlite.SqliteConnection connection,string sql,CancellationToken token){await using var command=connection.CreateCommand();command.CommandText=sql;return Convert.ToInt64(await command.ExecuteScalarAsync(token));}
 }

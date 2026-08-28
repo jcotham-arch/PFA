@@ -19,6 +19,14 @@ The initial conservative 50K rule pack enforces trailing drawdown, daily loss, c
 
 A strategy enters certification only when its exact frozen version is both `ValidationComplete` and linked to a `Stable` walk-forward report. At the end of this phase no strategy satisfies both conditions, so the sandbox correctly displays zero eligible strategies and does not create fantasy trades.
 
+## Immutable certification campaigns
+
+Certification campaigns bind an exact strategy ID/version and stable walk-forward evidence revision to one or more frozen, officially verified rule-pack snapshots. Each rule pack is evaluated independently against the same closed trading-day evidence. Campaigns, rule-pack snapshots, and results are append-only and content-addressed; replaying the same campaign is idempotent, while reusing its identity with different content is rejected.
+
+`POST /api/certification/campaigns` is protected by the separate sandbox control token. The service rechecks the exact `ValidationComplete` strategy version and its linked stable walk-forward report before evaluation. Unverified or duplicate rule packs fail closed. Database constraints permanently set both `CanPromoteStrategy` and `CanRouteToRealBroker` to false.
+
+The sandbox dashboard reports campaign and payout-eligible result totals. A payout-eligible simulation is evidence for review only—it cannot activate a strategy or authorize live infrastructure.
+
 ## Pattern and sequence replay
 
 In Development on the loopback interface only, `POST /api/patterns/replay` replays the registered active detectors against stored market bars and persists universal observations and sequence instances idempotently. The current MES 5-minute replay evaluated 1,481 complete aggregate bars and detected 877 distinct observations: 237 FVG, 320 liquidity sweeps, 160 range breakouts, and 160 failed breakouts. Existing legacy FVG captures remain preserved, so the dashboard's total FVG row may be higher than the replay-only count.

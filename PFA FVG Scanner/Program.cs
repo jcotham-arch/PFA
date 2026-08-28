@@ -107,6 +107,10 @@ builder.Services.AddSingleton<MarketChartService>();
 builder.Services.AddSingleton<IMarketSequenceDefinitionRegistry, MarketSequenceDefinitionRegistry>();
 builder.Services.AddSingleton<IMarketSequenceEngine, MarketSequenceEngine>();
 builder.Services.AddSingleton<PatternSequenceReplayService>();
+builder.Services.AddSingleton<PropFirmCertificationEngine>();
+builder.Services.AddSingleton<CertificationCampaignEngine>();
+builder.Services.AddSingleton<CertificationCampaignRepository>();
+builder.Services.AddSingleton<CertificationCampaignService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES
