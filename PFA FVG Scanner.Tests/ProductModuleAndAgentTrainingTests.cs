@@ -85,6 +85,7 @@ public sealed class ProductModuleAndAgentTrainingTests
         var repeated=await service.BuildAsync(request,TestContext.Current.CancellationToken);
         Assert.Equal(first.ContentHash,repeated.ContentHash);Assert.Equal(20,first.ExampleCount);
         Assert.Equal(14,first.TrainCount);Assert.Equal(2,first.ValidationCount);Assert.Equal(4,first.TestCount);
+        Assert.Contains("time.hourSin",first.FeatureNames);Assert.Contains("context.instrument.MES",first.FeatureNames);
         Assert.False(first.CanActivateStrategy);Assert.False(first.CanRouteToRealBroker);
         Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
         var training=new AgentBaselineTrainingService(factory.Database);

@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.1.0";
+    public const string Version = "generic-outcome-dataset-1.2.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -101,6 +101,14 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             var features = ExtractNumericFeatures(reader.GetString(11));
             features["direction"] = string.Equals(reader.GetString(8), "Bullish", StringComparison.OrdinalIgnoreCase) ? 1m : -1m;
             features["timeframeMinutes"] = TimeframeMinutes(reader.GetString(7));
+            features[$"context.instrument.{reader.GetString(5)}"] = 1m;
+            features[$"context.module.{reader.GetString(2)}"] = 1m;
+            features[$"context.pattern.{reader.GetString(4)}"] = 1m;
+            var minuteOfDay=formation.Hour*60+formation.Minute;
+            features["time.hourSin"]=(decimal)Math.Sin(2*Math.PI*minuteOfDay/1440d);
+            features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minuteOfDay/1440d);
+            features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)formation.DayOfWeek/7d);
+            features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)formation.DayOfWeek/7d);
             var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["directionalCloseTicks"] = Decimal(reader.GetString(16)),

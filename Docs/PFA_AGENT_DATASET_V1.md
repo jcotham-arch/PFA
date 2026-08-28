@@ -69,3 +69,7 @@ Run `ABR-F28EE81A440C0F552BEAB28C04BDA1B9` fits a deterministic L2-regularized l
 ## Nonlinear baseline and enforced promotion gate
 
 The deterministic 25-stage boosted-stump model records 44.3% validation and 44.7% test directional accuracy with 3.766/4.014 tick MAE. Run `ABR-FBF66C6BAC4076300FDEB76E9ED8C2C9` selects candidates by validation MAE, then applies a machine-readable research gate against untouched test and walk-forward evidence. The selected boosted-stump candidate is rejected because it does not beat global-mean test MAE, lacks the required two-percentage-point directional lift, and has walk-forward folds below 50%. Instrument coverage passes. This gate is advisory for further research only and never grants strategy activation or broker-routing authority.
+
+## Context feature contract V1.2
+
+Dataset `AGDS-06C06A8F1557340C69FE765B7E2664AC` expands the point-in-time vector from 15 to 32 numeric features with deterministic instrument, module, pattern, UTC session-cycle, and weekday-cycle context. The 19,900-example population and per-instrument splits are unchanged. Run `ABR-9DB205AFF809011E271E0B0DD20C0E59` shows that the expanded ridge and boosted-stump models still fail the promotion gate. The negative result indicates that categorical and calendar context alone are insufficient; future work must add genuine pre-decision market-state and regime features rather than tune against test outcomes.
