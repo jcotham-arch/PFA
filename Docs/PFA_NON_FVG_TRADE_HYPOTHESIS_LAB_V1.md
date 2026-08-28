@@ -36,10 +36,22 @@ All leading validation hypotheses are negative after costs and remain negative o
 
 Run `PTR-5D6476A68406EECC0A84928F1E5647FC` adds a one-minute confirmation-close entry beside the immediate next-open entry. It evaluates 72 hypotheses and 440,388 samples over the same 19,948 observations. Confirmation modestly improves the least-negative range-breakout validation rows, but their untouched test results remain approximately -0.08R to -0.09R. Failed-breakout continuation remains negative, and reversal interpretations do not lead validation. No entry timing is promoted.
 
+## Structural stops V1.2
+
+Run `PTR-064358D12C00849EABD425013FCD6DE3` compares explicit structural invalidation policies over all 19,948 observations with a locked 1R target, 30-minute maximum hold, both entry clocks, a one-tick buffer, and one tick of estimated round-trip cost. The 16 hypotheses produce 97,864 immutable samples.
+
+- Liquidity sweeps compare the sweep extreme with the reclaimed reference boundary.
+- Range breakouts compare the broken boundary with the opposite side of the source range.
+- Failed breakouts compare continuation and reversal direction interpretations with the structurally applicable boundary, extreme, or opposite-range stop.
+
+The least-negative validation hypothesis is failed-breakout continuation entered at the next one-minute open with the opposite-range stop: -0.094R validation across 678 samples and -0.112R on 680 untouched test samples. Range-breakout continuation with the opposite-range stop is approximately -0.116R validation and -0.086R test. Every structural-stop hypothesis remains negative after estimated costs, so none is promoted.
+
+An earlier pilot run, `PTR-EA3C285AE7902ABDD1A985430841964B`, selected only 640 observations because its explicit micro-symbol filter did not match the complete stored instrument universe. It remains retained for auditability but is not the representative result.
+
 ## Next research work
 
-1. Add entry variants: confirmation close, reclaim retest, boundary limit, and delayed confirmation.
-2. Add stop variants: signal extreme, reclaimed boundary, range midpoint/opposite boundary, and volatility-normalized invalidation.
+1. Add entry variants: reclaim retest, boundary limit, and delayed confirmation.
+2. Add volatility-normalized invalidation and range-midpoint stops.
 3. Add exits: partial targets, break-even movement, trailing structure, session close, and adverse time stop.
 4. Segment results by instrument, direction, session, weekday, volatility, trend, and sequence stage.
 5. Freeze promising definitions using validation only, then evaluate once on untouched test and prospective sandbox populations.

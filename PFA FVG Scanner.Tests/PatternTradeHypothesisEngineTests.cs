@@ -54,6 +54,36 @@ public sealed class PatternTradeHypothesisEngineTests
     }
 
     [Fact]
+    public void SweepBoundaryStopUsesReclaimedLevelInsteadOfSweepExtreme()
+    {
+        var definition=Definition("liquidity-sweep") with{StopPolicy="boundary-invalidation"};
+        var result=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,100.5m,99,100)],.25m);
+        Assert.Equal(99m,result.StopPrice);
+        Assert.Equal(101m,result.TargetPrice);
+    }
+
+    [Fact]
+    public void RangeOppositeBoundaryStopUsesFullRangeRisk()
+    {
+        var observation=Sweep() with{ModuleId="range-breakout",PatternType="RangeBreakout",
+            Direction=PatternDirection.Bullish,Geometry=new RangeBreakoutGeometry(RangeBoundarySide.Upper,98,101,102,101.5m,1,true,[])};
+        var definition=Definition("range-breakout") with{StopPolicy="opposite-range-invalidation"};
+        var result=PatternTradeHypothesisEngine.Evaluate(definition,observation,[Bar(0,102,106.5m,101,106)],.25m);
+        Assert.Equal(97.75m,result.StopPrice);
+        Assert.Equal(106.25m,result.TargetPrice);
+    }
+
+    [Fact]
+    public void UnknownStopPolicyIsRejected()
+    {
+        var definition=Definition("liquidity-sweep") with{StopPolicy="invented-stop"};
+        var error=Assert.Throws<NotSupportedException>(()=>
+            PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),[Bar(0,100,101,99,100)],.25m));
+        Assert.Contains("invented-stop",error.Message);
+    }
+
+    [Fact]
     public async Task ResearchRunUsesChronologicalSplitsAndPersistsImmutableSamples()
     {
         using var factory=await TestDatabaseFactory.CreateAsync();var repository=new PFA_FVG_Scanner.Data.UniversalMarketRecordRepository(factory.Database);
@@ -71,7 +101,7 @@ public sealed class PatternTradeHypothesisEngineTests
             command.Parameters.AddWithValue("$closeTime",known.AddMinutes(1).ToString("O"));await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
         var service=new PatternTradeResearchService(factory.Database,new InstrumentDefinitionRegistry());
-        var run=await service.RunAsync(new(Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1),TestContext.Current.CancellationToken);
+        var run=await service.RunAsync(new(Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1,["extreme-invalidation"]),TestContext.Current.CancellationToken);
         Assert.Equal(10,run.ObservationCount);Assert.Equal(20,run.SampleCount);Assert.Equal(2,run.HypothesisCount);
         Assert.Equal(14,run.Summaries.Where(x=>x.Split=="Train").Sum(x=>x.Samples));
         Assert.Equal(2,run.Summaries.Where(x=>x.Split=="Validation").Sum(x=>x.Samples));
@@ -80,7 +110,7 @@ public sealed class PatternTradeHypothesisEngineTests
     }
 
     private static PatternTradeHypothesisDefinition Definition(string module)=>new($"test-{module}","1",module,
-        HypothesisDirectionPolicy.PatternDirection,"next-one-minute-open","structural-invalidation",1m,15,1m);
+        HypothesisDirectionPolicy.PatternDirection,"next-one-minute-open","extreme-invalidation",1m,15,1m);
     private static MarketPatternObservation Sweep()=>new("OBS","liquidity-sweep","1","LiquiditySweep","MES","MESU6","5m",
         PatternDirection.Bullish,Now.AddMinutes(-5),Now,PatternLifecycleState.Detected,
         new LiquiditySweepGeometry(LiquiditySide.SellSide,99.25m,99m,.25m,true,1,[]),[],MarketDataQualityFlags.None);

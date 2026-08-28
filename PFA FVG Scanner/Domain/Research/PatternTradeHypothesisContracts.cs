@@ -25,9 +25,9 @@ public sealed record JsonPatternGeometry(JsonElement Value):IPatternGeometry;
 public sealed record PatternTradeResearchRequest(DateTime AsOfUtc,IReadOnlyList<string>? InstrumentIds=null,
     IReadOnlyList<string>? ModuleIds=null,IReadOnlyList<decimal>? TargetRs=null,
     IReadOnlyList<int>? MaximumHoldingMinutes=null,decimal StopBufferTicks=1m,
-    decimal EstimatedRoundTripCostTicks=1m);
+    decimal EstimatedRoundTripCostTicks=1m,IReadOnlyList<string>? StopPolicies=null);
 
-public sealed record PatternTradeHypothesisSummary(string HypothesisId,string ModuleId,string EntryPolicy,
+public sealed record PatternTradeHypothesisSummary(string HypothesisId,string ModuleId,string EntryPolicy,string StopPolicy,
     HypothesisDirectionPolicy DirectionPolicy,decimal TargetR,int MaximumHoldingMinutes,string Split,
     int Samples,int Targets,int Stops,int TimeExits,int Ambiguous,int NoEntryOrInvalid,
     decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR,
@@ -40,7 +40,7 @@ public sealed record PatternTradeResearchRun(string RunId,string EngineVersion,D
 
 public static class PatternTradeHypothesisEngine
 {
-    public const string Version="pattern-trade-hypothesis-engine-1.1.0";
+    public const string Version="pattern-trade-hypothesis-engine-1.2.0";
 
     public static PatternTradeHypothesisSample Evaluate(PatternTradeHypothesisDefinition definition,
         MarketPatternObservation observation,IReadOnlyList<CanonicalBar> oneMinuteBars,decimal tickSize)
@@ -57,7 +57,7 @@ public static class PatternTradeHypothesisEngine
         if(entryBar is null)return Result(HypothesisExitOutcome.NoEntry,"No completed one-minute entry bar exists after the decision clock.");
         var entry=definition.EntryPolicy=="one-minute-confirmation-close"?entryBar.Close:entryBar.Open;
         entryClock=definition.EntryPolicy=="one-minute-confirmation-close"?entryBar.CloseTimeUtc:entryBar.OpenTimeUtc;
-        var stop=StructuralStop(observation,direction,tickSize,definition.StopBufferTicks);
+        var stop=StructuralStop(observation,direction,definition.StopPolicy,tickSize,definition.StopBufferTicks);
         var risk=direction==PatternDirection.Bullish?entry-stop:stop-entry;
         if(risk<tickSize)return Result(HypothesisExitOutcome.InvalidRisk,"Structural stop does not create at least one tick of risk.",entryBar,entry,stop);
         var target=direction==PatternDirection.Bullish?entry+risk*definition.TargetR:entry-risk*definition.TargetR;
@@ -104,18 +104,21 @@ public static class PatternTradeHypothesisEngine
         policy==HypothesisDirectionPolicy.PatternDirection?direction:
             direction==PatternDirection.Bullish?PatternDirection.Bearish:PatternDirection.Bullish;
 
-    private static decimal StructuralStop(MarketPatternObservation observation,PatternDirection direction,
+    private static decimal StructuralStop(MarketPatternObservation observation,PatternDirection direction,string stopPolicy,
         decimal tickSize,decimal bufferTicks)
     {
         var geometry=observation.Geometry is JsonPatternGeometry json?json.Value:
             JsonSerializer.SerializeToElement(observation.Geometry,observation.Geometry.GetType());var buffer=tickSize*bufferTicks;
         decimal? Value(params string[] names)
         {foreach(var name in names)if(TryFindDecimal(geometry,name,out var value))return value;return null;}
-        decimal level;
-        if(observation.ModuleId=="liquidity-sweep")level=Value("SweepExtreme")??Value("ReferenceLevel")??0;
-        else if(observation.ModuleId is "range-breakout" or "failed-breakout")
-            level=direction==PatternDirection.Bullish?Value("RangeLower","BreakExtreme")??0:Value("RangeUpper","BreakExtreme")??0;
-        else level=Value("BreakExtreme","SweepExtreme","DetectionClose")??0;
+        var originalBoundary=observation.Direction==PatternDirection.Bullish?Value("RangeUpper"):Value("RangeLower");
+        decimal level=stopPolicy switch
+        {
+            "extreme-invalidation"=>Value("SweepExtreme","BreakExtreme")??0,
+            "boundary-invalidation"=>observation.ModuleId=="liquidity-sweep"?Value("ReferenceLevel")??0:originalBoundary??0,
+            "opposite-range-invalidation"=>direction==PatternDirection.Bullish?Value("RangeLower")??0:Value("RangeUpper")??0,
+            _=>throw new NotSupportedException($"Stop policy '{stopPolicy}' is not supported.")
+        };
         return direction==PatternDirection.Bullish?level-buffer:level+buffer;
     }
 
