@@ -137,6 +137,18 @@ public sealed class CanonicalTimelineRepository
         Add(command, "$correction", bar.CorrectionState.ToString()); Add(command, "$quality", (int)bar.QualityFlags);
         Add(command, "$effective", bar.RevisionEffectiveUtc.ToString("O")); Add(command, "$hash", bar.ContentHash);
         await command.ExecuteNonQueryAsync(token);
+        if(bar.Revision==1&&bar.IsComplete&&bar.InstrumentId!="UNRESOLVED")
+        {
+            await using var lookup=connection.CreateCommand();lookup.Transaction=transaction;lookup.CommandText="""
+                INSERT OR IGNORE INTO CanonicalResolvedResearchBars
+                (CanonicalBarId,InstrumentId,Timeframe,OpenTimeUtc,CloseTimeUtc,Open,High,Low,Close,Volume)
+                VALUES($id,$instrument,$timeframe,$openTime,$closeTime,$open,$high,$low,$close,$volume);
+                """;
+            Add(lookup,"$id",bar.CanonicalBarId);Add(lookup,"$instrument",bar.InstrumentId);Add(lookup,"$timeframe",bar.Timeframe);
+            Add(lookup,"$openTime",bar.OpenTimeUtc.ToString("O"));Add(lookup,"$closeTime",bar.CloseTimeUtc.ToString("O"));
+            Add(lookup,"$open",Format(bar.Open));Add(lookup,"$high",Format(bar.High));Add(lookup,"$low",Format(bar.Low));
+            Add(lookup,"$close",Format(bar.Close));Add(lookup,"$volume",Format(bar.Volume));await lookup.ExecuteNonQueryAsync(token);
+        }
     }
 
     private static async Task<int> InsertSourceAsync(SqliteConnection connection, SqliteTransaction transaction,

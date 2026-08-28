@@ -964,6 +964,67 @@ namespace PFA_FVG_Scanner.Data
                     ON CanonicalBars (InstrumentId, Timeframe, OpenTimeUtc, Revision);
                 CREATE INDEX IF NOT EXISTS IX_CanonicalBarSources_Bar
                     ON CanonicalBarSources (CanonicalBarId, Revision);
+                CREATE TABLE IF NOT EXISTS CanonicalBarInstrumentResolutions
+                (
+                    CanonicalBarId TEXT NOT NULL,
+                    ResolutionVersion TEXT NOT NULL,
+                    InstrumentId TEXT NOT NULL,
+                    Evidence TEXT NOT NULL,
+                    ResolvedAtUtc TEXT NOT NULL,
+                    PRIMARY KEY (CanonicalBarId, ResolutionVersion)
+                );
+                INSERT OR IGNORE INTO CanonicalBarInstrumentResolutions
+                    (CanonicalBarId,ResolutionVersion,InstrumentId,Evidence,ResolvedAtUtc)
+                SELECT CanonicalBarId,'root-symbol-resolution-1.0.0',
+                    CASE
+                        WHEN ProviderSymbol LIKE 'MES%' THEN 'MES' WHEN ProviderSymbol LIKE 'MNQ%' THEN 'MNQ'
+                        WHEN ProviderSymbol LIKE 'MYM%' THEN 'MYM' WHEN ProviderSymbol LIKE 'M2K%' THEN 'M2K'
+                        WHEN ProviderSymbol LIKE '6E%' THEN '6E' WHEN ProviderSymbol LIKE '6B%' THEN '6B'
+                        WHEN ProviderSymbol LIKE '6J%' THEN '6J' WHEN ProviderSymbol LIKE '6A%' THEN '6A'
+                        WHEN ProviderSymbol LIKE 'GC%' THEN 'GC' WHEN ProviderSymbol LIKE 'CL%' THEN 'CL'
+                        WHEN ProviderSymbol LIKE 'ZN%' THEN 'ZN' WHEN ProviderSymbol LIKE 'SI%' THEN 'SI'
+                        WHEN ProviderSymbol LIKE 'HG%' THEN 'HG' WHEN ProviderSymbol LIKE 'NG%' THEN 'NG'
+                        WHEN ProviderSymbol LIKE 'ZC%' THEN 'ZC' WHEN ProviderSymbol LIKE 'ZW%' THEN 'ZW'
+                        WHEN ProviderSymbol LIKE 'ZS%' THEN 'ZS' END,
+                    ProviderSymbol,datetime('now')
+                FROM CanonicalBars
+                WHERE InstrumentId='UNRESOLVED' AND Revision=1 AND
+                    NOT EXISTS (SELECT 1 FROM CanonicalMigrationJournal
+                                WHERE MigrationId='CANONICAL_ROOT_RESOLUTION_1') AND
+                    (ProviderSymbol LIKE 'MES%' OR ProviderSymbol LIKE 'MNQ%' OR ProviderSymbol LIKE 'MYM%'
+                     OR ProviderSymbol LIKE 'M2K%' OR ProviderSymbol LIKE '6E%' OR ProviderSymbol LIKE '6B%'
+                     OR ProviderSymbol LIKE '6J%' OR ProviderSymbol LIKE '6A%' OR ProviderSymbol LIKE 'GC%'
+                     OR ProviderSymbol LIKE 'CL%' OR ProviderSymbol LIKE 'ZN%' OR ProviderSymbol LIKE 'SI%'
+                     OR ProviderSymbol LIKE 'HG%' OR ProviderSymbol LIKE 'NG%' OR ProviderSymbol LIKE 'ZC%'
+                     OR ProviderSymbol LIKE 'ZW%' OR ProviderSymbol LIKE 'ZS%');
+                CREATE INDEX IF NOT EXISTS IX_CanonicalBarInstrumentResolutions_Instrument
+                    ON CanonicalBarInstrumentResolutions (InstrumentId, CanonicalBarId);
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('CANONICAL_ROOT_RESOLUTION_1',datetime('now'),
+                    'Additive root-symbol resolution for historically unresolved canonical bars.');
+                CREATE TABLE IF NOT EXISTS CanonicalResolvedResearchBars
+                (
+                    CanonicalBarId TEXT PRIMARY KEY,
+                    InstrumentId TEXT NOT NULL,
+                    Timeframe TEXT NOT NULL,
+                    OpenTimeUtc TEXT NOT NULL,
+                    CloseTimeUtc TEXT NOT NULL,
+                    Open TEXT NOT NULL,High TEXT NOT NULL,Low TEXT NOT NULL,Close TEXT NOT NULL,Volume TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO CanonicalResolvedResearchBars
+                    (CanonicalBarId,InstrumentId,Timeframe,OpenTimeUtc,CloseTimeUtc,Open,High,Low,Close,Volume)
+                SELECT b.CanonicalBarId,COALESCE(r.InstrumentId,b.InstrumentId),b.Timeframe,b.OpenTimeUtc,b.CloseTimeUtc,
+                       b.Open,b.High,b.Low,b.Close,b.Volume
+                FROM CanonicalBars b LEFT JOIN CanonicalBarInstrumentResolutions r
+                  ON r.CanonicalBarId=b.CanonicalBarId AND r.ResolutionVersion='root-symbol-resolution-1.0.0'
+                WHERE b.Revision=1 AND b.IsComplete=1 AND COALESCE(r.InstrumentId,b.InstrumentId)<>'UNRESOLVED'
+                  AND NOT EXISTS (SELECT 1 FROM CanonicalMigrationJournal
+                                  WHERE MigrationId='CANONICAL_RESEARCH_LOOKUP_1');
+                CREATE INDEX IF NOT EXISTS IX_CanonicalResolvedResearchBars_Instrument_Time
+                    ON CanonicalResolvedResearchBars(InstrumentId,Timeframe,CloseTimeUtc);
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('CANONICAL_RESEARCH_LOOKUP_1',datetime('now'),
+                    'Materialize resolved revision-one bars for point-in-time research feature lookup.');
                 """;
             await ExecuteAsync(connection, sql);
         }

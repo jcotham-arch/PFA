@@ -27,11 +27,12 @@ public sealed class PhaseOneFoundationTests
     }
 
     [Fact]
-    public void DefinitionLookupIsEffectiveDatedAndCaseInsensitive()
+    public void DefinitionLookupCoversHistoricalAndDatedContractSymbols()
     {
         var registry = new InstrumentDefinitionRegistry();
-        Assert.Null(registry.Find("mes", new DateOnly(2026, 8, 26)));
+        Assert.Equal("MES",registry.Find("MESU6",new DateOnly(2026,8,26))!.InstrumentId);
         Assert.Equal("MES", registry.Find("mes", new DateOnly(2026, 8, 27))!.InstrumentId);
+        Assert.Equal("6E",registry.Find("6EU6",new DateOnly(2026,4,30))!.InstrumentId);
         Assert.Equal(17, registry.GetAll().Count);
     }
 

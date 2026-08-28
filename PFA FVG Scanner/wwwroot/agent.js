@@ -22,7 +22,7 @@ async function hydrate(){
   }
   if(datasetResponse.ok){
     const datasets=await datasetResponse.json();
-    if(datasets.length){const dataset=datasets[0];document.getElementById('datasetExamples').textContent=number(dataset.exampleCount);document.getElementById('datasetStatus').textContent=`${number(dataset.trainCount)} train · ${number(dataset.validationCount)} validation · ${number(dataset.testCount)} test`;}
+    if(datasets.length){const dataset=datasets[0];document.getElementById('datasetExamples').textContent=number(dataset.exampleCount);document.getElementById('datasetStatus').textContent=`${number(dataset.trainCount)} train · ${number(dataset.validationCount)} validation · ${number(dataset.testCount)} test · ${number(dataset.featureNames?.length)} features`;}
   }
   if(baselineResponse.ok){
     const runs=await baselineResponse.json();

@@ -4,7 +4,7 @@ public sealed class InstrumentDefinitionRegistry : IInstrumentDefinitionRegistry
 {
     public const string DefinitionVersion = "1.0.0";
     public const string UniverseExpansionVersion = "1.1.0";
-    private static readonly DateOnly InitialEffectiveDate = new(2026, 8, 27);
+    private static readonly DateOnly InitialEffectiveDate = new(2000, 1, 1);
     private static readonly IReadOnlySet<string> CandleResolutions =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "1m", "5m", "15m", "1h", "4h", "1d" };
 
@@ -53,12 +53,13 @@ public sealed class InstrumentDefinitionRegistry : IInstrumentDefinitionRegistry
     public InstrumentDefinition? Find(string instrumentIdOrRootSymbol, DateOnly asOfDate)
     {
         if (string.IsNullOrWhiteSpace(instrumentIdOrRootSymbol)) return null;
-        return Definitions
+        var symbol=instrumentIdOrRootSymbol.Trim().ToUpperInvariant();
+        var eligible=Definitions
             .Where(x => asOfDate >= x.EffectiveFrom)
-            .Where(x => string.Equals(x.InstrumentId, instrumentIdOrRootSymbol.Trim(), StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(x.RootSymbol, instrumentIdOrRootSymbol.Trim(), StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(x => x.EffectiveFrom)
-            .FirstOrDefault();
+            .OrderByDescending(x => x.RootSymbol.Length).ThenByDescending(x => x.EffectiveFrom).ToArray();
+        return eligible.FirstOrDefault(x=>string.Equals(x.InstrumentId,symbol,StringComparison.OrdinalIgnoreCase)
+            ||string.Equals(x.RootSymbol,symbol,StringComparison.OrdinalIgnoreCase))
+            ??eligible.FirstOrDefault(x=>symbol.StartsWith(x.RootSymbol,StringComparison.OrdinalIgnoreCase));
     }
 
     private static InstrumentDefinition Create(string root, string name, string exchange,

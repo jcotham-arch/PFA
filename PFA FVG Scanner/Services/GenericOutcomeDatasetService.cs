@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.2.0";
+    public const string Version = "generic-outcome-dataset-1.3.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -73,7 +73,14 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             SELECT o.ObservationId,o.Revision,o.ModuleId,o.ModuleVersion,o.PatternType,o.InstrumentId,
                    o.ContractId,o.Timeframe,o.Direction,o.FormationTimeUtc,o.KnownAtUtc,o.PayloadJson,o.ContentHash,
                    u.OutcomeId,u.OutcomeVersion,u.EvaluatedThroughUtc,
-                   close.Value,mfe.Value,mae.Value
+                   close.Value,mfe.Value,mae.Value,
+                   (SELECT json_object('close',b.Close,'high',b.High,'low',b.Low,'volume',b.Volume)
+                    FROM CanonicalResolvedResearchBars b
+                    WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m' AND b.CloseTimeUtc<=o.KnownAtUtc
+                    ORDER BY b.CloseTimeUtc DESC LIMIT 1) latestBar,
+                   (SELECT b.Close FROM CanonicalResolvedResearchBars b
+                    WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m' AND b.CloseTimeUtc<=o.KnownAtUtc
+                    ORDER BY b.CloseTimeUtc DESC LIMIT 1 OFFSET 5) priorClose
             FROM UniversalMarketObservations o
             JOIN UniversalMarketOutcomes u ON u.ObservationId=o.ObservationId
             JOIN UniversalOutcomeMetrics close ON close.OutcomeId=u.OutcomeId
@@ -109,6 +116,8 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minuteOfDay/1440d);
             features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)formation.DayOfWeek/7d);
             features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)formation.DayOfWeek/7d);
+            AddMarketFeatures(features,reader.IsDBNull(19)?null:reader.GetString(19),
+                reader.IsDBNull(20)?null:reader.GetString(20));
             var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["directionalCloseTicks"] = Decimal(reader.GetString(16)),
@@ -206,6 +215,26 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
         if (element.ValueKind == JsonValueKind.Object)
             foreach (var property in element.EnumerateObject()) Walk(property.Value, $"{path}.{property.Name}", values);
         else if (element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var value)) values[path] = value;
+    }
+
+    private static void AddMarketFeatures(Dictionary<string,decimal> features,string? latestJson,string? priorCloseText)
+    {
+        if(string.IsNullOrWhiteSpace(latestJson))return;
+        using var document=JsonDocument.Parse(latestJson);var root=document.RootElement;
+        if(!root.TryGetProperty("close",out var closeNode)||!decimal.TryParse(closeNode.GetString(),
+               NumberStyles.Number,CultureInfo.InvariantCulture,out var close)||close==0)return;
+        if(root.TryGetProperty("high",out var highNode)&&root.TryGetProperty("low",out var lowNode)&&
+           decimal.TryParse(highNode.GetString(),NumberStyles.Number,CultureInfo.InvariantCulture,out var high)&&
+           decimal.TryParse(lowNode.GetString(),NumberStyles.Number,CultureInfo.InvariantCulture,out var low))
+        {
+            features["market.rangeFraction"]=(high-low)/close;
+            features["market.closeLocation"]=high==low?0.5m:(close-low)/(high-low);
+        }
+        if(root.TryGetProperty("volume",out var volumeNode)&&decimal.TryParse(volumeNode.GetString(),
+               NumberStyles.Number,CultureInfo.InvariantCulture,out var volume)&&volume>=0)
+            features["market.volumeLog"]=(decimal)Math.Log(1+(double)volume);
+        if(decimal.TryParse(priorCloseText,NumberStyles.Number,CultureInfo.InvariantCulture,out var prior)&&prior!=0)
+            features["market.return5Fraction"]=(close-prior)/prior;
     }
 
     private static string HashExample(GenericOutcomeResearchExample example) => AgentTrainingDatasetBuilder.Hash(

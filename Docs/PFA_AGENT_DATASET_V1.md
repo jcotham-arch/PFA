@@ -73,3 +73,9 @@ The deterministic 25-stage boosted-stump model records 44.3% validation and 44.7
 ## Context feature contract V1.2
 
 Dataset `AGDS-06C06A8F1557340C69FE765B7E2664AC` expands the point-in-time vector from 15 to 32 numeric features with deterministic instrument, module, pattern, UTC session-cycle, and weekday-cycle context. The 19,900-example population and per-instrument splits are unchanged. Run `ABR-9DB205AFF809011E271E0B0DD20C0E59` shows that the expanded ridge and boosted-stump models still fail the promotion gate. The negative result indicates that categorical and calendar context alone are insufficient; future work must add genuine pre-decision market-state and regime features rather than tune against test outcomes.
+
+## Canonical timeline repair and market-state features V1.3
+
+The canonical coverage audit found 579,449 historical bars recorded as `UNRESOLVED` because instrument definitions were incorrectly effective-dated from 2026-08-27 and dated contract symbols such as `MESU6` and `6EU6` were not recognized as roots. The fix makes reviewed definitions historically applicable, resolves dated symbols, preserves original canonical rows, and adds an additive versioned root-resolution mapping plus an indexed revision-one research lookup. Coverage now resolves MES, 6A, 6B, 6E, 6J, CL, GC, and HG histories.
+
+Dataset `AGDS-382EC60CAA9E155503AC45B44467613E` contains 19,900 examples and 36 features, now including pre-decision five-minute return, one-minute range fraction, close location, and log volume from immutable revision-one canonical bars whose close time is at or before the observation clock. Run `ABR-2562C9EDC41B7EB455386DAADE15C730` still rejects the boosted-stump candidate. This proves the data is now reaching the engine correctly, while also showing that this initial market-state window is not sufficient predictive evidence.

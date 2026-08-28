@@ -32,7 +32,8 @@ public sealed class ProductOverviewController : ControllerBase
                 bars = await CountAsync(connection, "CanonicalBars", cancellationToken),
                 sources = await CountAsync(connection, "CanonicalBarSources", cancellationToken),
                 providerConflicts = await CountAsync(connection, "CanonicalBars", cancellationToken,
-                    "(QualityFlags & 32) != 0")
+                    "(QualityFlags & 32) != 0"),
+                coverage = await GetCanonicalCoverageAsync(connection, cancellationToken)
             },
             features = new
             {
@@ -41,6 +42,23 @@ public sealed class ProductOverviewController : ControllerBase
                 stateSnapshots = await CountAsync(connection, "MarketStateSnapshots", cancellationToken)
             }
         });
+    }
+
+    private static async Task<IReadOnlyList<object>> GetCanonicalCoverageAsync(SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command=connection.CreateCommand();command.CommandText="""
+            SELECT COALESCE(r.InstrumentId,b.InstrumentId),b.Timeframe,COUNT(*),MIN(b.OpenTimeUtc),MAX(b.OpenTimeUtc)
+            FROM CanonicalBars b LEFT JOIN CanonicalBarInstrumentResolutions r
+              ON r.CanonicalBarId=b.CanonicalBarId AND r.ResolutionVersion='root-symbol-resolution-1.0.0'
+            WHERE b.Revision=1 GROUP BY COALESCE(r.InstrumentId,b.InstrumentId),b.Timeframe
+            ORDER BY COALESCE(r.InstrumentId,b.InstrumentId),b.Timeframe;
+            """;
+        var values=new List<object>();await using var reader=await command.ExecuteReaderAsync(cancellationToken);
+        while(await reader.ReadAsync(cancellationToken))values.Add(new
+        {instrumentId=reader.GetString(0),timeframe=reader.GetString(1),bars=reader.GetInt64(2),
+            earliestUtc=reader.GetString(3),latestUtc=reader.GetString(4)});
+        return values;
     }
 
     private static async Task<long> CountAsync(SqliteConnection connection, string table,
