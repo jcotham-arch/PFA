@@ -65,3 +65,7 @@ Run `ABR-6A6E552BFA3ACC1112EF5C00AB52EF43` adds three deterministic expanding fo
 ## Ridge-linear baseline V1.4
 
 Run `ABR-F28EE81A440C0F552BEAB28C04BDA1B9` fits a deterministic L2-regularized linear model using numeric geometry features standardized from training rows only. It records 44.4% validation and 45.1% test directional accuracy with 3.779/4.016 tick MAE. It does not beat the global-mean or grouped predictors decisively, so the feature set has not yet demonstrated sufficient predictive signal and promotion remains blocked.
+
+## Nonlinear baseline and enforced promotion gate
+
+The deterministic 25-stage boosted-stump model records 44.3% validation and 44.7% test directional accuracy with 3.766/4.014 tick MAE. Run `ABR-FBF66C6BAC4076300FDEB76E9ED8C2C9` selects candidates by validation MAE, then applies a machine-readable research gate against untouched test and walk-forward evidence. The selected boosted-stump candidate is rejected because it does not beat global-mean test MAE, lacks the required two-percentage-point directional lift, and has walk-forward folds below 50%. Instrument coverage passes. This gate is advisory for further research only and never grants strategy activation or broker-routing authority.

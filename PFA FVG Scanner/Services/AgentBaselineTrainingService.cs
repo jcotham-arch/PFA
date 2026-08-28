@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "ridge-linear-baseline-1.4.0";
+    public const string Version = "research-promotion-gate-1.6.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -28,6 +28,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var moduleMeans = training.GroupBy(x => x.ModuleId, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
         var ridge = FitRidge(training, 1m);
+        var boostedStumps = FitBoostedStumps(training, 25, 0.10m);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
         AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population, Func<Row,decimal> predictor)
         {
@@ -57,7 +58,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             ("instrument-mean", row => instrumentMeans.GetValueOrDefault(row.InstrumentId, globalMean)),
             ("module-mean", row => moduleMeans.GetValueOrDefault(row.ModuleId, globalMean)),
             ("instrument-module-direction-mean", Predict),
-            ("ridge-linear", ridge.Predict)
+            ("ridge-linear", ridge.Predict),
+            ("boosted-stumps", boostedStumps.Predict)
         };
         var variantMetrics = variants.SelectMany(variant => new[] { "Validation", "Test" }.Select(split =>
         {
@@ -66,13 +68,15 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
                 metric.RootMeanSquaredError, metric.DirectionalAccuracy);
         })).ToArray();
         var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
+        var promotionGate = BuildPromotionGate(variantMetrics, segmentMetrics, walkForwardMetrics);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
             Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
-            VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics });
+            VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
-            SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics);
+            SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics,
+            PromotionGate:promotionGate);
         await PersistAsync(run, token);
         return run;
     }
@@ -172,6 +176,59 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         return result;
     }
 
+    private static BoostedStumpModel FitBoostedStumps(IReadOnlyList<Row> training,int iterations,decimal learningRate)
+    {
+        var names=training.SelectMany(x=>x.Features.Keys).Distinct(StringComparer.Ordinal).Order().ToArray();
+        var thresholds=names.ToDictionary(name=>name,name=>
+        {
+            var values=training.Select(x=>x.Features.GetValueOrDefault(name)).Order().ToArray();
+            return Enumerable.Range(1,5).Select(part=>values[(int)Math.Floor((values.Length-1)*(part/6m))])
+                .Distinct().ToArray();
+        },StringComparer.Ordinal);
+        var initial=training.Average(x=>x.Actual);var predictions=Enumerable.Repeat(initial,training.Count).ToArray();
+        var stumps=new List<DecisionStump>();
+        for(var iteration=0;iteration<iterations;iteration++)
+        {
+            DecisionStump? best=null;decimal bestError=decimal.MaxValue;
+            foreach(var name in names)foreach(var threshold in thresholds[name])
+            {
+                decimal leftSum=0,rightSum=0;var leftCount=0;var rightCount=0;
+                for(var i=0;i<training.Count;i++)
+                {var residual=training[i].Actual-predictions[i];if(training[i].Features.GetValueOrDefault(name)<=threshold){leftSum+=residual;leftCount++;}else{rightSum+=residual;rightCount++;}}
+                if(leftCount==0||rightCount==0)continue;
+                var left=leftSum/leftCount;var right=rightSum/rightCount;decimal error=0;
+                for(var i=0;i<training.Count;i++)
+                {var residual=training[i].Actual-predictions[i];var estimate=training[i].Features.GetValueOrDefault(name)<=threshold?left:right;var delta=residual-estimate;error+=delta*delta;}
+                if(error>=bestError)continue;bestError=error;best=new(name,threshold,left*learningRate,right*learningRate);
+            }
+            if(best is null)break;stumps.Add(best);
+            for(var i=0;i<training.Count;i++)predictions[i]+=best.Predict(training[i]);
+        }
+        return new(initial,stumps);
+    }
+
+    private static AgentResearchPromotionGate BuildPromotionGate(
+        IReadOnlyList<AgentBaselineVariantMetric> variants,IReadOnlyList<AgentBaselineSegmentMetric> segments,
+        IReadOnlyList<AgentWalkForwardMetric> folds)
+    {
+        var candidates=new[]{"instrument-module-direction-mean","ridge-linear","boosted-stumps"};
+        var candidate=variants.Where(x=>x.Split=="Validation"&&candidates.Contains(x.Variant,StringComparer.Ordinal))
+            .OrderBy(x=>x.MeanAbsoluteError).ThenByDescending(x=>x.DirectionalAccuracy).First();
+        var test=variants.Single(x=>x.Variant==candidate.Variant&&x.Split=="Test");
+        var global=variants.Single(x=>x.Variant=="global-mean"&&x.Split=="Test");
+        var beatsMae=test.MeanAbsoluteError<global.MeanAbsoluteError;
+        var beatsDirection=test.DirectionalAccuracy>=global.DirectionalAccuracy+0.02m;
+        var stable=folds.Count>=3&&folds.All(x=>x.DirectionalAccuracy>=0.50m);
+        var coverage=segments.Where(x=>x.Split=="Test").All(x=>x.SampleCount>=50);
+        var reasons=new List<string>();
+        if(!beatsMae)reasons.Add("Candidate test MAE does not beat the global-mean control.");
+        if(!beatsDirection)reasons.Add("Candidate test directional accuracy lacks the required 2-point lift.");
+        if(!stable)reasons.Add("One or more embargoed walk-forward folds are below 50% directional accuracy.");
+        if(!coverage)reasons.Add("At least one instrument has fewer than 50 untouched test examples.");
+        return new(candidate.Variant,reasons.Count==0?"EligibleForResearchReview":"Rejected",beatsMae,
+            beatsDirection,stable,coverage,reasons);
+    }
+
     private static IReadOnlyList<AgentWalkForwardMetric> BuildWalkForwardMetrics(IReadOnlyList<Row> rows,int embargoMinutes)
     {
         var development=rows.Where(x=>x.Split is "Train" or "Validation")
@@ -212,4 +269,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         public decimal Predict(Row row)
         {var value=Coefficients[0];for(var i=0;i<Names.Length;i++)value+=Coefficients[i+1]*(row.Features.GetValueOrDefault(Names[i])-Means[i])/Scales[i];return value;}
     }
+    private sealed record DecisionStump(string Feature,decimal Threshold,decimal LeftValue,decimal RightValue)
+    {public decimal Predict(Row row)=>row.Features.GetValueOrDefault(Feature)<=Threshold?LeftValue:RightValue;}
+    private sealed record BoostedStumpModel(decimal Initial,IReadOnlyList<DecisionStump> Stumps)
+    {public decimal Predict(Row row)=>Initial+Stumps.Sum(x=>x.Predict(row));}
 }

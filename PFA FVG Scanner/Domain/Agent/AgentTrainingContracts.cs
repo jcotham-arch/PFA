@@ -66,9 +66,14 @@ public sealed record AgentWalkForwardMetric(int Fold,int EmbargoMinutes,int Trai
     int ValidationSamples,DateTime ValidationStartUtc,DateTime ValidationEndUtc,
     decimal MeanAbsoluteError,decimal RootMeanSquaredError,decimal DirectionalAccuracy);
 
+public sealed record AgentResearchPromotionGate(string Candidate,string Status,bool BeatsGlobalMeanMae,
+    bool BeatsGlobalMeanDirection,bool WalkForwardStable,bool InstrumentCoverage,
+    IReadOnlyList<string> Reasons);
+
 public sealed record AgentBaselineRun(string RunId,string ModelVersion,string DatasetId,string DatasetContentHash,
     string TargetName,int TrainingSamples,int GroupCount,IReadOnlyList<AgentBaselineMetric> Metrics,
     DateTime TrainedAtUtc,string ContentHash,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false,
     IReadOnlyList<AgentBaselineSegmentMetric>? SegmentMetrics=null,
     IReadOnlyList<AgentBaselineVariantMetric>? VariantMetrics=null,
-    IReadOnlyList<AgentWalkForwardMetric>? WalkForwardMetrics=null);
+    IReadOnlyList<AgentWalkForwardMetric>? WalkForwardMetrics=null,
+    AgentResearchPromotionGate? PromotionGate=null);

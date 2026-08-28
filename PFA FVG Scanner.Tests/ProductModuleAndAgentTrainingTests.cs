@@ -94,8 +94,8 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.Equal(new[]{"Train","Validation","Test"},baseline.Metrics.Select(x=>x.Split));
         Assert.Equal(4,baseline.SegmentMetrics!.Count);
         Assert.All(baseline.SegmentMetrics,metric=>Assert.True(metric.SampleCount>0));
-        Assert.Equal(12,baseline.VariantMetrics!.Count);
-        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-linear"},
+        Assert.Equal(14,baseline.VariantMetrics!.Count);
+        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-linear","boosted-stumps"},
             baseline.VariantMetrics.Select(x=>x.Variant).Distinct());
         Assert.Equal(3,baseline.WalkForwardMetrics!.Count);
         Assert.All(baseline.WalkForwardMetrics,metric=>
@@ -103,6 +103,8 @@ public sealed class ProductModuleAndAgentTrainingTests
             Assert.Equal(15,metric.EmbargoMinutes);Assert.True(metric.TrainingSamples>0);
             Assert.True(metric.ValidationSamples>0);Assert.True(metric.ValidationStartUtc<=metric.ValidationEndUtc);
         });
+        Assert.NotNull(baseline.PromotionGate);Assert.Equal("Rejected",baseline.PromotionGate.Status);
+        Assert.NotEmpty(baseline.PromotionGate.Reasons);Assert.False(baseline.CanActivateStrategy);
         Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
         Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));
     }
