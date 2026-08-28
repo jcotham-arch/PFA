@@ -65,6 +65,8 @@ The fixed exit remains the least-negative validation result at -0.094R for faile
 
 Every derived notice retains the sequence identity, definition, instrument, timeframe, current and next role, knowledge clock, expiry clock, and point-in-time confidence. The API and Agent Center exclude the FVG-containing sequence from this non-FVG notification surface. All notices hard-code `IsActionable`, `CanActivateStrategy`, and `CanRouteToRealBroker` to false.
 
+`pattern-trade-notification-semantics-1.0.0` provides the corresponding point-in-time lifecycle for each individual pattern hypothesis: `Detected`, `ResearchEntryEligible`, `TargetReached`, `StopReached`, `BreakEvenExit`, `TimeExpired`, `Ambiguous`, and `Unavailable`. The interpreter withholds entry state until the entry clock and withholds terminal state until the exit clock. A no-entry outcome is not exposed until the source run's evaluation horizon. Prices and outcomes remain hypothetical research evidence, and every notice is non-actionable with activation and broker routing disabled.
+
 ## Sequence-conditioned trade evidence V1.0
 
 Run `STR-700BA3E7654B51B0ECC70A141868F89C` joins the immutable V1.3 trade samples to 9,764 completed named non-FVG sequences. A context sample is admitted only when the observation is the terminal sequence member and the persisted sequence completion clock is no later than the trade decision clock. Each of the 104,280 context samples retains lineage to the source sample, observation, hypothesis, sequence instance, definition, terminal role, and chronological split.

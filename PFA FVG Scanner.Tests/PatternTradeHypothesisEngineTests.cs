@@ -113,6 +113,21 @@ public sealed class PatternTradeHypothesisEngineTests
     }
 
     [Fact]
+    public void PatternNotificationLifecycleDoesNotRevealEntryOrOutcomeEarly()
+    {
+        var definition=Definition("liquidity-sweep") with{EntryPolicy="one-minute-confirmation-close"};
+        var sample=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,100.5m,99.5m,100.25m),Bar(1,100.25m,101.75m,100,101.5m)],.25m);
+        var detected=PatternTradeNotificationInterpreter.Interpret(sample,Now,Now.AddHours(1));
+        var eligible=PatternTradeNotificationInterpreter.Interpret(sample,Now.AddMinutes(1),Now.AddHours(1));
+        var terminal=PatternTradeNotificationInterpreter.Interpret(sample,Now.AddMinutes(2),Now.AddHours(1));
+        Assert.Equal(PatternTradeNotificationState.Detected,detected.State);
+        Assert.Equal(PatternTradeNotificationState.ResearchEntryEligible,eligible.State);
+        Assert.Equal(PatternTradeNotificationState.TargetReached,terminal.State);
+        Assert.False(eligible.IsActionable);Assert.False(eligible.CanActivateStrategy);Assert.False(eligible.CanRouteToRealBroker);
+    }
+
+    [Fact]
     public async Task ResearchRunUsesChronologicalSplitsAndPersistsImmutableSamples()
     {
         using var factory=await TestDatabaseFactory.CreateAsync();var repository=new PFA_FVG_Scanner.Data.UniversalMarketRecordRepository(factory.Database);

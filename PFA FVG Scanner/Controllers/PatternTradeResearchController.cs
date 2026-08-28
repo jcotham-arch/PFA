@@ -6,10 +6,15 @@ namespace PFA_FVG_Scanner.Controllers;
 
 [ApiController]
 [Route("api/research/pattern-trades")]
-public sealed class PatternTradeResearchController(PatternTradeResearchService service):ControllerBase
+public sealed class PatternTradeResearchController(PatternTradeResearchService service,
+    PatternTradeNotificationService notifications):ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken token)=>Ok(await service.GetAllAsync(token));
+
+    [HttpGet("notifications")]
+    public async Task<IActionResult> GetNotifications([FromQuery] DateTime? asOfUtc=null,[FromQuery] int limit=100,
+        CancellationToken token=default)=>Ok(await notifications.GetLatestAsync(asOfUtc?.ToUniversalTime()??DateTime.UtcNow,limit,token));
 
     [HttpPost]
     public async Task<IActionResult> Run([FromBody] PatternTradeResearchRequest request,CancellationToken token)
