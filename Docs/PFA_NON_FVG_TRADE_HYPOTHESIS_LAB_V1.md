@@ -32,6 +32,10 @@ Every sample retains observation identity, hypothesis identity, decision/entry/e
 
 All leading validation hypotheses are negative after costs and remain negative on untouched test data. The least-negative validation family is failed-breakout continuation with a 60-minute hold; its test mean remains approximately -0.13R. The initial grid therefore identifies no tradeable candidate. That is a useful negative baseline, not a reason to tune against the test set.
 
+## Entry timing V1.1
+
+Run `PTR-5D6476A68406EECC0A84928F1E5647FC` adds a one-minute confirmation-close entry beside the immediate next-open entry. It evaluates 72 hypotheses and 440,388 samples over the same 19,948 observations. Confirmation modestly improves the least-negative range-breakout validation rows, but their untouched test results remain approximately -0.08R to -0.09R. Failed-breakout continuation remains negative, and reversal interpretations do not lead validation. No entry timing is promoted.
+
 ## Next research work
 
 1. Add entry variants: confirmation close, reclaim retest, boundary limit, and delayed confirmation.

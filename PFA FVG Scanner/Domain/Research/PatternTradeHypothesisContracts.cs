@@ -27,7 +27,7 @@ public sealed record PatternTradeResearchRequest(DateTime AsOfUtc,IReadOnlyList<
     IReadOnlyList<int>? MaximumHoldingMinutes=null,decimal StopBufferTicks=1m,
     decimal EstimatedRoundTripCostTicks=1m);
 
-public sealed record PatternTradeHypothesisSummary(string HypothesisId,string ModuleId,
+public sealed record PatternTradeHypothesisSummary(string HypothesisId,string ModuleId,string EntryPolicy,
     HypothesisDirectionPolicy DirectionPolicy,decimal TargetR,int MaximumHoldingMinutes,string Split,
     int Samples,int Targets,int Stops,int TimeExits,int Ambiguous,int NoEntryOrInvalid,
     decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR,
@@ -40,7 +40,7 @@ public sealed record PatternTradeResearchRun(string RunId,string EngineVersion,D
 
 public static class PatternTradeHypothesisEngine
 {
-    public const string Version="pattern-trade-hypothesis-engine-1.0.0";
+    public const string Version="pattern-trade-hypothesis-engine-1.1.0";
 
     public static PatternTradeHypothesisSample Evaluate(PatternTradeHypothesisDefinition definition,
         MarketPatternObservation observation,IReadOnlyList<CanonicalBar> oneMinuteBars,decimal tickSize)
@@ -48,17 +48,21 @@ public static class PatternTradeHypothesisEngine
         ArgumentNullException.ThrowIfNull(definition);ArgumentNullException.ThrowIfNull(observation);
         if(definition.TargetR<=0||definition.MaximumHoldingMinutes<1||tickSize<=0)
             throw new ArgumentException("Target, holding period, and tick size must be positive.");
-        var direction=ResolveDirection(observation.Direction,definition.DirectionPolicy);
-        var bars=oneMinuteBars.Where(x=>x.IsComplete&&x.CloseTimeUtc>observation.KnownAtUtc)
-            .OrderBy(x=>x.OpenTimeUtc).ToArray();
-        var entryBar=bars.FirstOrDefault(x=>x.OpenTimeUtc>=observation.KnownAtUtc);
+        var direction=ResolveDirection(observation.Direction,definition.DirectionPolicy);DateTime? entryClock=null;
+        var allBars=oneMinuteBars.Where(x=>x.IsComplete).OrderBy(x=>x.OpenTimeUtc).ToArray();
+        var firstFuture=allBars.FirstOrDefault(x=>x.OpenTimeUtc>=observation.KnownAtUtc);
+        var entryBar=definition.EntryPolicy switch
+        {"next-one-minute-open"=>firstFuture,"one-minute-confirmation-close"=>firstFuture,
+            _=>throw new NotSupportedException($"Entry policy '{definition.EntryPolicy}' is not supported.")};
         if(entryBar is null)return Result(HypothesisExitOutcome.NoEntry,"No completed one-minute entry bar exists after the decision clock.");
-        var entry=entryBar.Open;var stop=StructuralStop(observation,direction,tickSize,definition.StopBufferTicks);
+        var entry=definition.EntryPolicy=="one-minute-confirmation-close"?entryBar.Close:entryBar.Open;
+        entryClock=definition.EntryPolicy=="one-minute-confirmation-close"?entryBar.CloseTimeUtc:entryBar.OpenTimeUtc;
+        var stop=StructuralStop(observation,direction,tickSize,definition.StopBufferTicks);
         var risk=direction==PatternDirection.Bullish?entry-stop:stop-entry;
         if(risk<tickSize)return Result(HypothesisExitOutcome.InvalidRisk,"Structural stop does not create at least one tick of risk.",entryBar,entry,stop);
         var target=direction==PatternDirection.Bullish?entry+risk*definition.TargetR:entry-risk*definition.TargetR;
-        var end=entryBar.OpenTimeUtc.AddMinutes(definition.MaximumHoldingMinutes);
-        var path=bars.Where(x=>x.OpenTimeUtc>=entryBar.OpenTimeUtc&&x.OpenTimeUtc<end).ToArray();
+        var end=entryClock.Value.AddMinutes(definition.MaximumHoldingMinutes);
+        var path=allBars.Where(x=>x.OpenTimeUtc>=entryClock.Value&&x.OpenTimeUtc<end).ToArray();
         decimal mfe=0,mae=0;
         foreach(var bar in path)
         {
@@ -91,7 +95,7 @@ public static class PatternTradeHypothesisEngine
             var hash=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
             return new($"PTHS-{hash[..32]}",definition.HypothesisId,observation.ObservationId,observation.InstrumentId,
                 observation.ContractId,observation.ModuleId,observation.PatternType,direction.ToString(),observation.KnownAtUtc,
-                entered?.OpenTimeUtc,entryPrice,stopPrice,targetPrice,exited?.CloseTimeUtc,exitPrice,outcome,gross,net,
+                entryClock,entryPrice,stopPrice,targetPrice,exited?.CloseTimeUtc,exitPrice,outcome,gross,net,
                 maxFavorable,maxAdverse,reason,hash);
         }
     }

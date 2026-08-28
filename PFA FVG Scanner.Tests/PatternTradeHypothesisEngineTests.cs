@@ -33,6 +33,16 @@ public sealed class PatternTradeHypothesisEngineTests
     }
 
     [Fact]
+    public void ConfirmationEntryWaitsForCompletedBarAndStartsPathAfterItsClose()
+    {
+        var definition=Definition("liquidity-sweep") with{EntryPolicy="one-minute-confirmation-close"};
+        var result=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,105,99.5m,100.25m),Bar(1,100.25m,101.75m,100,101.5m)],.25m);
+        Assert.Equal(Now.AddMinutes(1),result.EntryTimeUtc);Assert.Equal(100.25m,result.EntryPrice);
+        Assert.Equal(HypothesisExitOutcome.Target,result.Outcome);
+    }
+
+    [Fact]
     public void FailedBreakoutCanTestOpposingReversalWithoutChangingPatternFact()
     {
         var observation=Sweep() with{ModuleId="failed-breakout",PatternType="FailedBreakout",
@@ -62,10 +72,10 @@ public sealed class PatternTradeHypothesisEngineTests
         }
         var service=new PatternTradeResearchService(factory.Database,new InstrumentDefinitionRegistry());
         var run=await service.RunAsync(new(Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1),TestContext.Current.CancellationToken);
-        Assert.Equal(10,run.ObservationCount);Assert.Equal(10,run.SampleCount);
-        Assert.Equal(7,run.Summaries.Single(x=>x.Split=="Train").Samples);
-        Assert.Equal(1,run.Summaries.Single(x=>x.Split=="Validation").Samples);
-        Assert.Equal(2,run.Summaries.Single(x=>x.Split=="Test").Samples);
+        Assert.Equal(10,run.ObservationCount);Assert.Equal(20,run.SampleCount);Assert.Equal(2,run.HypothesisCount);
+        Assert.Equal(14,run.Summaries.Where(x=>x.Split=="Train").Sum(x=>x.Samples));
+        Assert.Equal(2,run.Summaries.Where(x=>x.Split=="Validation").Sum(x=>x.Samples));
+        Assert.Equal(4,run.Summaries.Where(x=>x.Split=="Test").Sum(x=>x.Samples));
         Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
     }
 

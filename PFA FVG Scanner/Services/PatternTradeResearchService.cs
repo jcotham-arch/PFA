@@ -118,10 +118,10 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         {
             var policies=module=="failed-breakout"?new[]{HypothesisDirectionPolicy.PatternDirection,HypothesisDirectionPolicy.OpposePatternDirection}:
                 new[]{HypothesisDirectionPolicy.PatternDirection};
-            foreach(var policy in policies)foreach(var target in targets)foreach(var hold in holds)
-            {var signature=$"{module}|{policy}|{target:G29}|{hold}|{buffer:G29}|{costs:G29}";var hash=AgentTrainingDatasetBuilder.Hash(signature);
-                values.Add(new($"PTH-{hash[..24]}","1.0.0",module,policy,"next-one-minute-open","structural-invalidation",
-                    target,hold,buffer,costs));}
+            foreach(var policy in policies)foreach(var entry in new[]{"next-one-minute-open","one-minute-confirmation-close"})
+            foreach(var target in targets)foreach(var hold in holds)
+            {var signature=$"{module}|{policy}|{entry}|{target:G29}|{hold}|{buffer:G29}|{costs:G29}";var hash=AgentTrainingDatasetBuilder.Hash(signature);
+                values.Add(new($"PTH-{hash[..24]}","1.1.0",module,policy,entry,"structural-invalidation",target,hold,buffer,costs));}
         }return values;
     }
 
@@ -131,7 +131,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         var rows=samples.Where(x=>x.HypothesisId==definition.HypothesisId&&x.Split==split).ToArray();var resolved=rows.Where(x=>x.NetR.HasValue).ToArray();
         var wins=resolved.Where(x=>x.NetR>0).Sum(x=>x.NetR!.Value);var losses=Math.Abs(resolved.Where(x=>x.NetR<0).Sum(x=>x.NetR!.Value));
         decimal peak=0,equity=0,drawdown=0;foreach(var row in resolved.OrderBy(x=>x.EntryTimeUtc)){equity+=row.NetR!.Value;peak=Math.Max(peak,equity);drawdown=Math.Max(drawdown,peak-equity);}
-        return new PatternTradeHypothesisSummary(definition.HypothesisId,definition.ModuleId,definition.DirectionPolicy,definition.TargetR,
+        return new PatternTradeHypothesisSummary(definition.HypothesisId,definition.ModuleId,definition.EntryPolicy,definition.DirectionPolicy,definition.TargetR,
             definition.MaximumHoldingMinutes,split,rows.Length,rows.Count(x=>x.Outcome==HypothesisExitOutcome.Target),
             rows.Count(x=>x.Outcome==HypothesisExitOutcome.Stop),rows.Count(x=>x.Outcome==HypothesisExitOutcome.TimeExit),
             rows.Count(x=>x.Outcome==HypothesisExitOutcome.Ambiguous),rows.Count(x=>x.Outcome is HypothesisExitOutcome.NoEntry or HypothesisExitOutcome.InvalidRisk),
