@@ -28,6 +28,9 @@ public sealed class PatternObservationResearchService(PfaDatabase database)
             sourceReferences=JsonSerializer.Deserialize<string[]>(observationReader.GetString(14))??[],
             qualityFlags=observationReader.GetInt32(15),contentHash=observationReader.GetString(16)
         };await observationReader.DisposeAsync();
+        PatternTradeResearchRun? sourceRun=null;await using(var runCommand=connection.CreateCommand())
+        {runCommand.CommandText="SELECT RunJson FROM PatternTradeResearchRuns WHERE EngineVersion='pattern-trade-hypothesis-engine-1.3.0' ORDER BY CreatedAtUtc DESC LIMIT 1";var json=await runCommand.ExecuteScalarAsync(token) as string;if(json is not null)sourceRun=JsonSerializer.Deserialize<PatternTradeResearchRun>(json);}
+        var definitions=(sourceRun?.Summaries??[]).GroupBy(x=>x.HypothesisId).ToDictionary(x=>x.Key,x=>x.First());
         var scenarios=new List<object>();await using(var command=connection.CreateCommand())
         {
             command.CommandText="""
@@ -37,7 +40,7 @@ public sealed class PatternObservationResearchService(PfaDatabase database)
                   AND r.CreatedAtUtc=(SELECT MAX(r2.CreatedAtUtc) FROM PatternTradeResearchRuns r2 WHERE r2.EngineVersion='pattern-trade-hypothesis-engine-1.3.0')
                 ORDER BY s.HypothesisId;
                 """;command.Parameters.AddWithValue("$id",observationId);await using var reader=await command.ExecuteReaderAsync(token);
-            while(await reader.ReadAsync(token)){var sample=JsonSerializer.Deserialize<PatternTradeHypothesisSample>(reader.GetString(0));if(sample is null)continue;scenarios.Add(new{sample.SampleId,sample.HypothesisId,sample.Direction,sample.EntryTimeUtc,sample.EntryPrice,sample.StopPrice,sample.TargetPrice,sample.ExitTimeUtc,sample.ExitPrice,Outcome=sample.Outcome.ToString(),sample.GrossR,sample.NetR,sample.MaximumFavorableExcursionR,sample.MaximumAdverseExcursionR,sample.Reason,Classification=Classify(sample)});}
+            while(await reader.ReadAsync(token)){var sample=JsonSerializer.Deserialize<PatternTradeHypothesisSample>(reader.GetString(0));if(sample is null)continue;definitions.TryGetValue(sample.HypothesisId,out var definition);scenarios.Add(new{sample.SampleId,sample.HypothesisId,sample.Direction,EntryPolicy=definition?.EntryPolicy,StopPolicy=definition?.StopPolicy,ExitPolicy=definition?.ExitPolicy,TargetR=definition?.TargetR,MaximumHoldingMinutes=definition?.MaximumHoldingMinutes,DirectionPolicy=definition?.DirectionPolicy.ToString(),sample.EntryTimeUtc,sample.EntryPrice,sample.StopPrice,sample.TargetPrice,sample.ExitTimeUtc,sample.ExitPrice,Outcome=sample.Outcome.ToString(),sample.GrossR,sample.NetR,sample.MaximumFavorableExcursionR,sample.MaximumAdverseExcursionR,sample.Reason,Classification=Classify(sample)});}
         }
         var sequences=new List<object>();await using(var command=connection.CreateCommand())
         {command.CommandText="""
@@ -48,10 +51,11 @@ public sealed class PatternObservationResearchService(PfaDatabase database)
             """;command.Parameters.AddWithValue("$id",observationId);await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token))sequences.Add(new{sequenceInstanceId=reader.GetString(0),sequenceDefinitionId=reader.GetString(1),state=reader.GetString(2),currentStageIndex=reader.GetInt32(3),startedAtUtc=reader.GetString(4),updatedAtUtc=reader.GetString(5),pointInTimeConfidence=decimal.Parse(reader.GetString(6),CultureInfo.InvariantCulture),role=reader.GetString(7),ordinal=reader.GetInt32(8)});}
         var outcomes=new List<object>();await using(var command=connection.CreateCommand())
         {command.CommandText="SELECT OutcomeId,OutcomeVersion,EvaluatedThroughUtc,SamplesEvaluated,PayloadJson,QualityFlags FROM UniversalMarketOutcomes WHERE ObservationId=$id ORDER BY EvaluatedThroughUtc";command.Parameters.AddWithValue("$id",observationId);await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token))outcomes.Add(new{outcomeId=reader.GetString(0),outcomeVersion=reader.GetString(1),evaluatedThroughUtc=reader.GetString(2),samplesEvaluated=reader.GetInt32(3),payload=JsonDocument.Parse(reader.GetString(4)).RootElement.Clone(),qualityFlags=reader.GetInt32(5)});}
-        return new{observation,scenarioCount=scenarios.Count,scenarios,sequences,outcomes,researchOnly=true};
+        return new{observation,sourcePatternTradeRunId=sourceRun?.RunId,sourceEngineVersion=sourceRun?.EngineVersion,
+            scenarioCount=scenarios.Count,scenarios,sequences,outcomes,researchOnly=true};
     }
 
     private static string Classify(PatternTradeHypothesisSample sample)=>sample.Outcome switch
     {HypothesisExitOutcome.Ambiguous=>"Ambiguous",HypothesisExitOutcome.NoEntry or HypothesisExitOutcome.InvalidRisk=>"Unavailable",
-     _ when sample.NetR>0=>"Good",_=>"Bad"};
+     _ when sample.NetR>0=>"Good",_ when sample.NetR<0=>"Bad",_=>"Neutral"};
 }

@@ -75,6 +75,24 @@ The best validation row is the terminal range breakout after a liquidity-sweep-t
 
 The sequence study is immutable and separately persisted from the source trade run. Its database contract prevents updates and deletions, and it cannot activate a strategy or route to a broker.
 
+## Research inspection surface
+
+Every recent universal observation can now be opened from the Pattern Intelligence screen. The detail view exposes the stored geometry and point-in-time formation/knowledge clocks, then joins the observation to the latest immutable V1.3 samples and its sequence memberships. Each interpretation identifies its direction policy, entry policy, stop policy, exit policy, target multiple, maximum hold, calculated prices, terminal reason, and net R.
+
+Scenario labels are deliberately outcome-based: positive net R is `Good`, negative net R is `Bad`, exactly zero is `Neutral`, unresolved intrabar ordering is `Ambiguous`, and no-entry/invalid-risk cases are `Unavailable`. A target event is therefore not presented as a win when estimated costs reduce it to zero or below.
+
+## Terminology-neutral daily study
+
+The Research screen includes a UTC-date study endpoint and view. For August 27, 2026, the stored database contains 6,968 one-minute bars across seven explicit dated contracts, 237 named setup observations, and 533 sequence instances. A separate deterministic five-minute scan emits 947 descriptive events without requiring a named trading-pattern label:
+
+- range expansion against the preceding 20-bar median range;
+- volume bursts against the preceding 20-bar median volume;
+- compression followed by expansion;
+- upper- and lower-wick rejection relative to the real body;
+- three-bar ascending and descending structure progressions.
+
+These events retain symbol, UTC clock, OHLCV, numeric strength, and a human-readable calculation. They are research observations rather than entries or evidence of profitability. Their trade value still requires separately versioned hypotheses, chronological splits, costs, and untouched evaluation.
+
 ## Next research work
 
 1. Add entry variants: reclaim retest, boundary limit, and delayed confirmation.
