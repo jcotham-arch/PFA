@@ -84,6 +84,35 @@ public sealed class PatternTradeHypothesisEngineTests
     }
 
     [Fact]
+    public void BreakEvenPolicyMovesStopOnlyAfterActivationBarCompletes()
+    {
+        var definition=Definition("liquidity-sweep") with{ExitPolicy="break-even-after-0.5r"};
+        var result=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,100.75m,99.5m,100.5m),Bar(1,100.5m,100.75m,99.75m,100)],.25m);
+        Assert.Equal(HypothesisExitOutcome.BreakEven,result.Outcome);
+        Assert.Equal(100m,result.ExitPrice);Assert.Equal(0m,result.GrossR);
+    }
+
+    [Fact]
+    public void SameBarBreakEvenActivationAndStructuralStopIsAmbiguous()
+    {
+        var definition=Definition("liquidity-sweep") with{ExitPolicy="break-even-after-0.5r"};
+        var result=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,100.75m,98.5m,100)],.25m);
+        Assert.Equal(HypothesisExitOutcome.Ambiguous,result.Outcome);
+        Assert.Contains("activation and structural stop",result.Reason);
+    }
+
+    [Fact]
+    public void UnknownExitPolicyIsRejected()
+    {
+        var definition=Definition("liquidity-sweep") with{ExitPolicy="clairvoyant-exit"};
+        var error=Assert.Throws<NotSupportedException>(()=>
+            PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),[Bar(0,100,101,99,100)],.25m));
+        Assert.Contains("clairvoyant-exit",error.Message);
+    }
+
+    [Fact]
     public async Task ResearchRunUsesChronologicalSplitsAndPersistsImmutableSamples()
     {
         using var factory=await TestDatabaseFactory.CreateAsync();var repository=new PFA_FVG_Scanner.Data.UniversalMarketRecordRepository(factory.Database);
@@ -101,7 +130,8 @@ public sealed class PatternTradeHypothesisEngineTests
             command.Parameters.AddWithValue("$closeTime",known.AddMinutes(1).ToString("O"));await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
         var service=new PatternTradeResearchService(factory.Database,new InstrumentDefinitionRegistry());
-        var run=await service.RunAsync(new(Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1,["extreme-invalidation"]),TestContext.Current.CancellationToken);
+        var run=await service.RunAsync(new(Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1,
+            ["extreme-invalidation"],["fixed-target-or-time"]),TestContext.Current.CancellationToken);
         Assert.Equal(10,run.ObservationCount);Assert.Equal(20,run.SampleCount);Assert.Equal(2,run.HypothesisCount);
         Assert.Equal(14,run.Summaries.Where(x=>x.Split=="Train").Sum(x=>x.Samples));
         Assert.Equal(2,run.Summaries.Where(x=>x.Split=="Validation").Sum(x=>x.Samples));

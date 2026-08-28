@@ -7,11 +7,12 @@ using PFA_FVG_Scanner.Domain.Timeline;
 namespace PFA_FVG_Scanner.Domain.Research;
 
 public enum HypothesisDirectionPolicy { PatternDirection, OpposePatternDirection }
-public enum HypothesisExitOutcome { Target, Stop, TimeExit, Ambiguous, NoEntry, InvalidRisk }
+public enum HypothesisExitOutcome { Target, Stop, BreakEven, TimeExit, Ambiguous, NoEntry, InvalidRisk }
 
 public sealed record PatternTradeHypothesisDefinition(string HypothesisId,string Version,string ModuleId,
     HypothesisDirectionPolicy DirectionPolicy,string EntryPolicy,string StopPolicy,decimal TargetR,
-    int MaximumHoldingMinutes,decimal StopBufferTicks,decimal EstimatedRoundTripCostTicks=0m);
+    int MaximumHoldingMinutes,decimal StopBufferTicks,decimal EstimatedRoundTripCostTicks=0m,
+    string ExitPolicy="fixed-target-or-time");
 
 public sealed record PatternTradeHypothesisSample(string SampleId,string HypothesisId,string ObservationId,
     string InstrumentId,string? ContractId,string ModuleId,string PatternType,string Direction,
@@ -25,13 +26,14 @@ public sealed record JsonPatternGeometry(JsonElement Value):IPatternGeometry;
 public sealed record PatternTradeResearchRequest(DateTime AsOfUtc,IReadOnlyList<string>? InstrumentIds=null,
     IReadOnlyList<string>? ModuleIds=null,IReadOnlyList<decimal>? TargetRs=null,
     IReadOnlyList<int>? MaximumHoldingMinutes=null,decimal StopBufferTicks=1m,
-    decimal EstimatedRoundTripCostTicks=1m,IReadOnlyList<string>? StopPolicies=null);
+    decimal EstimatedRoundTripCostTicks=1m,IReadOnlyList<string>? StopPolicies=null,
+    IReadOnlyList<string>? ExitPolicies=null);
 
 public sealed record PatternTradeHypothesisSummary(string HypothesisId,string ModuleId,string EntryPolicy,string StopPolicy,
     HypothesisDirectionPolicy DirectionPolicy,decimal TargetR,int MaximumHoldingMinutes,string Split,
     int Samples,int Targets,int Stops,int TimeExits,int Ambiguous,int NoEntryOrInvalid,
     decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR,
-    bool IsTradableEvidence=false);
+    bool IsTradableEvidence=false,string ExitPolicy="fixed-target-or-time",int BreakEvenExits=0);
 
 public sealed record PatternTradeResearchRun(string RunId,string EngineVersion,DateTime AsOfUtc,
     IReadOnlyList<string> InstrumentIds,IReadOnlyList<string> ModuleIds,int ObservationCount,
@@ -40,7 +42,7 @@ public sealed record PatternTradeResearchRun(string RunId,string EngineVersion,D
 
 public static class PatternTradeHypothesisEngine
 {
-    public const string Version="pattern-trade-hypothesis-engine-1.2.0";
+    public const string Version="pattern-trade-hypothesis-engine-1.3.0";
 
     public static PatternTradeHypothesisSample Evaluate(PatternTradeHypothesisDefinition definition,
         MarketPatternObservation observation,IReadOnlyList<CanonicalBar> oneMinuteBars,decimal tickSize)
@@ -63,18 +65,29 @@ public static class PatternTradeHypothesisEngine
         var target=direction==PatternDirection.Bullish?entry+risk*definition.TargetR:entry-risk*definition.TargetR;
         var end=entryClock.Value.AddMinutes(definition.MaximumHoldingMinutes);
         var path=allBars.Where(x=>x.OpenTimeUtc>=entryClock.Value&&x.OpenTimeUtc<end).ToArray();
-        decimal mfe=0,mae=0;
+        var exitPolicy=definition.ExitPolicy??"fixed-target-or-time";
+        if(exitPolicy is not("fixed-target-or-time" or "break-even-after-0.5r"))
+            throw new NotSupportedException($"Exit policy '{exitPolicy}' is not supported.");
+        decimal mfe=0,mae=0;var breakEvenActive=false;
         foreach(var bar in path)
         {
             var favorable=direction==PatternDirection.Bullish?bar.High-entry:entry-bar.Low;
             var adverse=direction==PatternDirection.Bullish?entry-bar.Low:bar.High-entry;
             mfe=Math.Max(mfe,favorable/risk);mae=Math.Max(mae,adverse/risk);
+            var activeStop=breakEvenActive?entry:stop;
             var hitTarget=direction==PatternDirection.Bullish?bar.High>=target:bar.Low<=target;
-            var hitStop=direction==PatternDirection.Bullish?bar.Low<=stop:bar.High>=stop;
+            var hitStop=direction==PatternDirection.Bullish?bar.Low<=activeStop:bar.High>=activeStop;
+            var activation=direction==PatternDirection.Bullish?entry+risk*.5m:entry-risk*.5m;
+            var hitActivation=exitPolicy=="break-even-after-0.5r"&&!breakEvenActive&&
+                (direction==PatternDirection.Bullish?bar.High>=activation:bar.Low<=activation);
+            if(hitActivation&&hitStop)return Result(HypothesisExitOutcome.Ambiguous,
+                "Break-even activation and structural stop occur inside the same one-minute bar; intrabar order is unknown.",entryBar,entry,stop,target,bar,null,mfe,mae);
             if(hitTarget&&hitStop)return Result(HypothesisExitOutcome.Ambiguous,
                 "Stop and target occur inside the same one-minute bar; intrabar order is unknown.",entryBar,entry,stop,target,bar,null,mfe,mae);
-            if(hitStop)return Result(HypothesisExitOutcome.Stop,"Structural stop reached first.",entryBar,entry,stop,target,bar,stop,mfe,mae);
+            if(hitStop)return Result(breakEvenActive?HypothesisExitOutcome.BreakEven:HypothesisExitOutcome.Stop,
+                breakEvenActive?"Break-even stop reached after activation.":"Structural stop reached first.",entryBar,entry,stop,target,bar,activeStop,mfe,mae);
             if(hitTarget)return Result(HypothesisExitOutcome.Target,"R-multiple target reached first.",entryBar,entry,stop,target,bar,target,mfe,mae);
+            if(hitActivation)breakEvenActive=true;
         }
         var last=path.LastOrDefault();if(last is null)return Result(HypothesisExitOutcome.NoEntry,"No complete bar exists inside the holding window.");
         return Result(HypothesisExitOutcome.TimeExit,"Maximum holding period elapsed.",entryBar,entry,stop,target,last,last.Close,mfe,mae);

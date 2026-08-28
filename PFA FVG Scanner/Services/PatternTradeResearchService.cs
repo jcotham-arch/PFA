@@ -25,8 +25,11 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         var targetRs=(request.TargetRs??[1m,2m,3m]).Distinct().Order().ToArray();
         var holds=(request.MaximumHoldingMinutes??[15,30,60]).Distinct().Order().ToArray();
         var requestedStops=request.StopPolicies?.Select(Normalize).Distinct().Order().ToArray();
+        var exitPolicies=(request.ExitPolicies??["fixed-target-or-time","break-even-after-0.5r"]).Select(Normalize).Distinct().Order().ToArray();
         if(requestedStops?.Any(x=>x is not("extreme-invalidation" or "boundary-invalidation" or "opposite-range-invalidation"))==true)
             throw new ArgumentException("Unknown stop policy.");
+        if(exitPolicies.Length==0||exitPolicies.Any(x=>x is not("fixed-target-or-time" or "break-even-after-0.5r")))
+            throw new ArgumentException("Unknown exit policy.");
         if(targetRs.Any(x=>x<=0)||holds.Any(x=>x<1)||request.StopBufferTicks<0||request.EstimatedRoundTripCostTicks<0)
             throw new ArgumentException("Targets and holding periods must be positive; costs and buffers cannot be negative.");
         var observations=await ReadObservationsAsync(asOf,roots,modules,token);
@@ -34,7 +37,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         var splitObservations=AssignSplits(observations);
         var bars=await ReadBarsAsync(splitObservations.Select(x=>x.Observation.InstrumentId).Distinct().ToArray(),
             splitObservations.Min(x=>x.Observation.KnownAtUtc).AddMinutes(-1),asOf,token);
-        var definitions=Definitions(modules,targetRs,holds,request.StopBufferTicks,request.EstimatedRoundTripCostTicks,requestedStops);
+        var definitions=Definitions(modules,targetRs,holds,request.StopBufferTicks,request.EstimatedRoundTripCostTicks,requestedStops,exitPolicies);
         var samples=new List<PatternTradeHypothesisSample>();var maxHold=holds.Max();
         foreach(var item in splitObservations)
         {
@@ -45,7 +48,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
                 samples.Add(PatternTradeHypothesisEngine.Evaluate(hypothesis,observation,window,definition.TickSize) with{Split=item.Split});
         }
         var summaries=Summarize(definitions,samples);var seed=JsonSerializer.Serialize(new
-        {PatternTradeHypothesisEngine.Version,asOf,roots,modules,targetRs,holds,request.StopBufferTicks,
+        {PatternTradeHypothesisEngine.Version,asOf,roots,modules,targetRs,holds,exitPolicies,request.StopBufferTicks,
             request.EstimatedRoundTripCostTicks,Samples=samples.Select(x=>x.ContentHash),summaries});
         var hash=AgentTrainingDatasetBuilder.Hash(seed);var run=new PatternTradeResearchRun($"PTR-{hash[..32]}",
             PatternTradeHypothesisEngine.Version,asOf,splitObservations.Select(x=>x.Observation.InstrumentId).Distinct().Order().ToArray(),
@@ -115,16 +118,16 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
     private static IReadOnlyList<CanonicalBar> Window(CanonicalBar[] bars,DateTime decision,int maxHold)
     {var start=Array.FindIndex(bars,x=>x.CloseTimeUtc>decision);if(start<0)return[];var end=start;var cutoff=decision.AddMinutes(maxHold+2);while(end<bars.Length&&bars[end].OpenTimeUtc<cutoff)end++;return bars[start..end];}
 
-    private static List<PatternTradeHypothesisDefinition> Definitions(string[] modules,decimal[] targets,int[] holds,decimal buffer,decimal costs,string[]? requestedStops)
+    private static List<PatternTradeHypothesisDefinition> Definitions(string[] modules,decimal[] targets,int[] holds,decimal buffer,decimal costs,string[]? requestedStops,string[] exitPolicies)
     {
         var values=new List<PatternTradeHypothesisDefinition>();foreach(var module in modules)
         {
             var policies=module=="failed-breakout"?new[]{HypothesisDirectionPolicy.PatternDirection,HypothesisDirectionPolicy.OpposePatternDirection}:
                 new[]{HypothesisDirectionPolicy.PatternDirection};
             foreach(var policy in policies)foreach(var entry in new[]{"next-one-minute-open","one-minute-confirmation-close"})
-            foreach(var stop in requestedStops??Stops(module,policy))foreach(var target in targets)foreach(var hold in holds)
-            {var signature=$"{module}|{policy}|{entry}|{stop}|{target:G29}|{hold}|{buffer:G29}|{costs:G29}";var hash=AgentTrainingDatasetBuilder.Hash(signature);
-                values.Add(new($"PTH-{hash[..24]}","1.2.0",module,policy,entry,stop,target,hold,buffer,costs));}
+            foreach(var stop in requestedStops??Stops(module,policy))foreach(var exit in exitPolicies)foreach(var target in targets)foreach(var hold in holds)
+            {var signature=$"{module}|{policy}|{entry}|{stop}|{exit}|{target:G29}|{hold}|{buffer:G29}|{costs:G29}";var hash=AgentTrainingDatasetBuilder.Hash(signature);
+                values.Add(new($"PTH-{hash[..24]}","1.3.0",module,policy,entry,stop,target,hold,buffer,costs,exit));}
         }return values;
     }
 
@@ -145,7 +148,8 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
             rows.Count(x=>x.Outcome==HypothesisExitOutcome.Stop),rows.Count(x=>x.Outcome==HypothesisExitOutcome.TimeExit),
             rows.Count(x=>x.Outcome==HypothesisExitOutcome.Ambiguous),rows.Count(x=>x.Outcome is HypothesisExitOutcome.NoEntry or HypothesisExitOutcome.InvalidRisk),
             resolved.Length==0?0:Round(resolved.Average(x=>x.NetR!.Value)),resolved.Length==0?0:Round(resolved.Count(x=>x.NetR>0)/(decimal)resolved.Length),
-            losses==0?(wins>0?999m:0m):Round(wins/losses),Round(drawdown));
+            losses==0?(wins>0?999m:0m):Round(wins/losses),Round(drawdown),false,definition.ExitPolicy,
+            rows.Count(x=>x.Outcome==HypothesisExitOutcome.BreakEven));
     })).ToArray();
 
     private async Task PersistAsync(PatternTradeResearchRun run,IReadOnlyList<PatternTradeHypothesisSample> samples,CancellationToken token)

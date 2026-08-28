@@ -120,6 +120,41 @@ public sealed class PhaseSevenSequenceIntelligenceTests
         Assert.DoesNotContain(opposing, x => x.State == MarketSequenceState.Successful);
     }
 
+    [Fact]
+    public void NotificationSemanticsSeparateWatchingCompletionExpiryAndInvalidation()
+    {
+        var engine=Engine();
+        var partial=Assert.Single(engine.Replay(Definition,[Observation("A","Formation",0)],TestData.BaseTime.AddMinutes(10)));
+        var watching=SequenceNotificationInterpreter.Interpret(Definition,partial,TestData.BaseTime.AddMinutes(10));
+        Assert.Equal(SequenceNotificationState.Watching,watching.State);Assert.Equal("sweep",watching.NextRole);
+        Assert.False(watching.IsActionable);Assert.False(watching.CanActivateStrategy);Assert.False(watching.CanRouteToRealBroker);
+
+        var complete=Assert.Single(engine.Replay(Definition,
+            [Observation("A","Formation",0),Observation("B","Sweep",5),Observation("C","Reclaim",10)],
+            TestData.BaseTime.AddMinutes(11)),x=>x.State==MarketSequenceState.Successful);
+        var eligible=SequenceNotificationInterpreter.Interpret(Definition,complete,TestData.BaseTime.AddMinutes(11));
+        Assert.Equal(SequenceNotificationState.ResearchEligible,eligible.State);
+        Assert.Contains("no validated trade edge",eligible.Message);
+
+        var expired=Assert.Single(engine.Replay(Definition,[Observation("A","Formation",0)],TestData.BaseTime.AddMinutes(31)));
+        Assert.Equal(SequenceNotificationState.Expired,
+            SequenceNotificationInterpreter.Interpret(Definition,expired,TestData.BaseTime.AddMinutes(31)).State);
+
+        var terminating=Definition with{TerminationPatternTypes=Set("Invalidation")};
+        var terminated=Assert.Single(engine.Replay(terminating,
+            [Observation("A","Formation",0),Observation("X","Invalidation",5)],TestData.BaseTime.AddMinutes(6)));
+        Assert.Equal(SequenceNotificationState.Invalidated,
+            SequenceNotificationInterpreter.Interpret(terminating,terminated,TestData.BaseTime.AddMinutes(6)).State);
+    }
+
+    [Fact]
+    public void NotificationCannotExistBeforeItsSequenceStateWasKnown()
+    {
+        var partial=Assert.Single(Engine().Replay(Definition,[Observation("A","Formation",0)],TestData.BaseTime.AddMinutes(10)));
+        Assert.Throws<ArgumentException>(()=>SequenceNotificationInterpreter.Interpret(
+            Definition,partial,TestData.BaseTime.AddMinutes(-1)));
+    }
+
     private static IMarketSequenceEngine Engine() => new MarketSequenceEngine(new LegacyUtcTradingSessionService());
     private static IReadOnlySet<string> Set(params string[] values) =>
         new HashSet<string>(values, StringComparer.OrdinalIgnoreCase);

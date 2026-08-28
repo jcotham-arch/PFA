@@ -18,6 +18,22 @@ public sealed class MarketSequencesController : ControllerBase
     [HttpGet("definitions")]
     public IActionResult GetDefinitions() => Ok(_definitions.GetAll());
 
+    [HttpGet("notifications")]
+    public async Task<IActionResult> GetNotifications([FromQuery] DateTime? asOfUtc=null,
+        [FromQuery] int observationLimit=2000,CancellationToken cancellationToken=default)
+    {
+        var cutoff=asOfUtc?.ToUniversalTime()??DateTime.UtcNow;
+        var observations=await _observations.GetObservationsAsync(limit:Math.Clamp(observationLimit,1,10000),
+            cancellationToken:cancellationToken);
+        var values=_definitions.GetAll()
+            .Where(x=>x.Stages.All(stage=>!stage.AcceptedPatternTypes.Contains("FairValueGap")))
+            .SelectMany(definition=>_engine.Replay(definition,observations,cutoff)
+                .Select(instance=>SequenceNotificationInterpreter.Interpret(definition,instance,cutoff)))
+            .OrderByDescending(x=>x.KnownAtUtc).ThenBy(x=>x.NotificationId,StringComparer.Ordinal).Take(100).ToArray();
+        return Ok(new{AsOfUtc=cutoff,SemanticsVersion=SequenceNotificationInterpreter.Version,
+            IsResearchOnly=true,Notifications=values});
+    }
+
     [HttpGet("preview/{definitionId}")]
     public async Task<IActionResult> Preview(string definitionId, [FromQuery] DateTime? asOfUtc = null,
         [FromQuery] int observationLimit = 500, CancellationToken cancellationToken = default)
