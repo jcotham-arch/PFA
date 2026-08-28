@@ -61,3 +61,7 @@ Run `ABR-4F2ED9C0A3AD4C98C7536B7A8D132090` compares zero, global-mean, instrumen
 ## Embargoed walk-forward V1.3
 
 Run `ABR-6A6E552BFA3ACC1112EF5C00AB52EF43` adds three deterministic expanding folds inside the development population. Each instrument is sliced chronologically, each fold trains only on its earlier history, labels must be known before a 15-minute pre-validation embargo, and the final test split remains untouched. Fold directional accuracy progresses from 43.9% to 45.3% to 47.6%; MAE moves from 6.389 to 4.816 to 3.350 ticks. The instability across time is explicit evidence that stronger modeling and stability gates are still required.
+
+## Ridge-linear baseline V1.4
+
+Run `ABR-F28EE81A440C0F552BEAB28C04BDA1B9` fits a deterministic L2-regularized linear model using numeric geometry features standardized from training rows only. It records 44.4% validation and 45.1% test directional accuracy with 3.779/4.016 tick MAE. It does not beat the global-mean or grouped predictors decisively, so the feature set has not yet demonstrated sufficient predictive signal and promotion remains blocked.

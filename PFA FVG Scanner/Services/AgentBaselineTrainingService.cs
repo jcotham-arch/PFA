@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "embargoed-walk-forward-1.3.0";
+    public const string Version = "ridge-linear-baseline-1.4.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -27,6 +27,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
         var moduleMeans = training.GroupBy(x => x.ModuleId, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
+        var ridge = FitRidge(training, 1m);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
         AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population, Func<Row,decimal> predictor)
         {
@@ -55,7 +56,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             ("global-mean", _ => globalMean),
             ("instrument-mean", row => instrumentMeans.GetValueOrDefault(row.InstrumentId, globalMean)),
             ("module-mean", row => moduleMeans.GetValueOrDefault(row.ModuleId, globalMean)),
-            ("instrument-module-direction-mean", Predict)
+            ("instrument-module-direction-mean", Predict),
+            ("ridge-linear", ridge.Predict)
         };
         var variantMetrics = variants.SelectMany(variant => new[] { "Validation", "Test" }.Select(split =>
         {
@@ -97,7 +99,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         if (string.IsNullOrWhiteSpace(datasetHash)) throw new KeyNotFoundException($"Dataset '{datasetId}' was not found.");
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Split,InstrumentId,ModuleId,Direction,LabelJson,EventTimeUtc,OutcomeKnownAtUtc
+            SELECT Split,InstrumentId,ModuleId,Direction,LabelJson,EventTimeUtc,OutcomeKnownAtUtc,FeatureJson
             FROM AgentResearchExamples WHERE DatasetId=$id ORDER BY EventTimeUtc,ExampleId;
             """;
         command.Parameters.AddWithValue("$id", datasetId); var values = new List<Row>();
@@ -108,7 +110,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             if (!labels.TryGetValue(target, out var actual)) continue;
             values.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 $"{reader.GetString(1)}|{reader.GetString(2)}|{reader.GetString(3)}", actual,
-                Parse(reader.GetString(5)),Parse(reader.GetString(6))));
+                Parse(reader.GetString(5)),Parse(reader.GetString(6)),
+                JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(7))??[]));
         }
         return (datasetHash, values);
     }
@@ -132,6 +135,42 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
 
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
     private static DateTime Parse(string value)=>DateTime.Parse(value,null,DateTimeStyles.RoundtripKind).ToUniversalTime();
+
+    private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda)
+    {
+        var names=training.SelectMany(x=>x.Features.Keys).Distinct(StringComparer.Ordinal).Order().ToArray();
+        var means=names.Select(name=>training.Average(x=>x.Features.GetValueOrDefault(name))).ToArray();
+        var scales=names.Select((name,index)=>
+        {
+            var variance=training.Average(x=>{var delta=x.Features.GetValueOrDefault(name)-means[index];return delta*delta;});
+            var scale=(decimal)Math.Sqrt((double)variance);return scale==0?1m:scale;
+        }).ToArray();
+        var size=names.Length+1;var matrix=new decimal[size,size];var vector=new decimal[size];
+        foreach(var row in training)
+        {
+            var x=new decimal[size];x[0]=1m;
+            for(var i=0;i<names.Length;i++)x[i+1]=(row.Features.GetValueOrDefault(names[i])-means[i])/scales[i];
+            for(var i=0;i<size;i++){vector[i]+=x[i]*row.Actual;for(var j=0;j<size;j++)matrix[i,j]+=x[i]*x[j];}
+        }
+        for(var i=1;i<size;i++)matrix[i,i]+=lambda;
+        return new(names,means,scales,Solve(matrix,vector));
+    }
+
+    private static decimal[] Solve(decimal[,] matrix,decimal[] vector)
+    {
+        var size=vector.Length;
+        for(var pivot=0;pivot<size;pivot++)
+        {
+            var best=pivot;for(var row=pivot+1;row<size;row++)if(Math.Abs(matrix[row,pivot])>Math.Abs(matrix[best,pivot]))best=row;
+            if(best!=pivot){for(var column=0;column<size;column++)(matrix[pivot,column],matrix[best,column])=(matrix[best,column],matrix[pivot,column]);(vector[pivot],vector[best])=(vector[best],vector[pivot]);}
+            if(Math.Abs(matrix[pivot,pivot])<0.000000000001m)continue;
+            for(var row=pivot+1;row<size;row++)
+            {var factor=matrix[row,pivot]/matrix[pivot,pivot];for(var column=pivot;column<size;column++)matrix[row,column]-=factor*matrix[pivot,column];vector[row]-=factor*vector[pivot];}
+        }
+        var result=new decimal[size];
+        for(var row=size-1;row>=0;row--){var sum=vector[row];for(var column=row+1;column<size;column++)sum-=matrix[row,column]*result[column];result[row]=Math.Abs(matrix[row,row])<0.000000000001m?0m:sum/matrix[row,row];}
+        return result;
+    }
 
     private static IReadOnlyList<AgentWalkForwardMetric> BuildWalkForwardMetrics(IReadOnlyList<Row> rows,int embargoMinutes)
     {
@@ -167,5 +206,10 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     }
 
     private sealed record Row(string Split,string InstrumentId,string ModuleId,string GroupKey,decimal Actual,
-        DateTime EventTimeUtc,DateTime OutcomeKnownAtUtc);
+        DateTime EventTimeUtc,DateTime OutcomeKnownAtUtc,IReadOnlyDictionary<string,decimal> Features);
+    private sealed record RidgeModel(string[] Names,decimal[] Means,decimal[] Scales,decimal[] Coefficients)
+    {
+        public decimal Predict(Row row)
+        {var value=Coefficients[0];for(var i=0;i<Names.Length;i++)value+=Coefficients[i+1]*(row.Features.GetValueOrDefault(Names[i])-Means[i])/Scales[i];return value;}
+    }
 }
