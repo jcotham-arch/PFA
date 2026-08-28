@@ -57,3 +57,7 @@ The corrected materialization is `AGDS-50E5F28574E991C0266092D02ED6A515`: 19,900
 ## Baseline comparison V1.2
 
 Run `ABR-4F2ED9C0A3AD4C98C7536B7A8D132090` compares zero, global-mean, instrument-mean, module-mean, and instrument/module/direction-grouped predictors fitted only on training rows. On test data, the grouped predictor reaches 45.9% directional accuracy but 4.031 ticks MAE; the global-mean predictor reaches 45.8% and 3.998 ticks. The added grouping therefore does not yet provide a meaningful edge over the trivial baseline. This negative result remains visible by design and blocks promotion.
+
+## Embargoed walk-forward V1.3
+
+Run `ABR-6A6E552BFA3ACC1112EF5C00AB52EF43` adds three deterministic expanding folds inside the development population. Each instrument is sliced chronologically, each fold trains only on its earlier history, labels must be known before a 15-minute pre-validation embargo, and the final test split remains untouched. Fold directional accuracy progresses from 43.9% to 45.3% to 47.6%; MAE moves from 6.389 to 4.816 to 3.350 ticks. The instability across time is explicit evidence that stronger modeling and stability gates are still required.

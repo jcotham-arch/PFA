@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "baseline-comparison-1.2.0";
+    public const string Version = "embargoed-walk-forward-1.3.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -63,13 +63,14 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             return new AgentBaselineVariantMetric(variant.Name, split, metric.SampleCount, metric.MeanAbsoluteError,
                 metric.RootMeanSquaredError, metric.DirectionalAccuracy);
         })).ToArray();
+        var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
             Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
-            VariantMetrics=variantMetrics });
+            VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
-            SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics);
+            SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics);
         await PersistAsync(run, token);
         return run;
     }
@@ -96,7 +97,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         if (string.IsNullOrWhiteSpace(datasetHash)) throw new KeyNotFoundException($"Dataset '{datasetId}' was not found.");
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Split,InstrumentId,ModuleId,Direction,LabelJson
+            SELECT Split,InstrumentId,ModuleId,Direction,LabelJson,EventTimeUtc,OutcomeKnownAtUtc
             FROM AgentResearchExamples WHERE DatasetId=$id ORDER BY EventTimeUtc,ExampleId;
             """;
         command.Parameters.AddWithValue("$id", datasetId); var values = new List<Row>();
@@ -106,7 +107,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             var labels = JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(4)) ?? [];
             if (!labels.TryGetValue(target, out var actual)) continue;
             values.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-                $"{reader.GetString(1)}|{reader.GetString(2)}|{reader.GetString(3)}", actual));
+                $"{reader.GetString(1)}|{reader.GetString(2)}|{reader.GetString(3)}", actual,
+                Parse(reader.GetString(5)),Parse(reader.GetString(6))));
         }
         return (datasetHash, values);
     }
@@ -129,5 +131,41 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     }
 
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
-    private sealed record Row(string Split,string InstrumentId,string ModuleId,string GroupKey,decimal Actual);
+    private static DateTime Parse(string value)=>DateTime.Parse(value,null,DateTimeStyles.RoundtripKind).ToUniversalTime();
+
+    private static IReadOnlyList<AgentWalkForwardMetric> BuildWalkForwardMetrics(IReadOnlyList<Row> rows,int embargoMinutes)
+    {
+        var development=rows.Where(x=>x.Split is "Train" or "Validation")
+            .GroupBy(x=>x.InstrumentId,StringComparer.Ordinal)
+            .ToDictionary(x=>x.Key,x=>x.OrderBy(y=>y.EventTimeUtc).ToArray(),StringComparer.Ordinal);
+        var metrics=new List<AgentWalkForwardMetric>();
+        for(var fold=0;fold<3;fold++)
+        {
+            var training=new List<Row>();var validation=new List<Row>();
+            foreach(var instrument in development.Values)
+            {
+                var start=(int)Math.Floor(instrument.Length*(0.70m+fold*0.10m));
+                var end=fold==2?instrument.Length:(int)Math.Floor(instrument.Length*(0.80m+fold*0.10m));
+                if(start>=end)continue;
+                var window=instrument[start..end];var cutoff=window[0].EventTimeUtc.AddMinutes(-embargoMinutes);
+                training.AddRange(instrument[..start].Where(x=>x.OutcomeKnownAtUtc<=cutoff));validation.AddRange(window);
+            }
+            if(training.Count==0||validation.Count==0)continue;
+            var global=training.Average(x=>x.Actual);
+            var groups=training.GroupBy(x=>x.GroupKey,StringComparer.Ordinal)
+                .ToDictionary(x=>x.Key,x=>x.Average(y=>y.Actual),StringComparer.Ordinal);
+            decimal Predict(Row row)=>groups.GetValueOrDefault(row.GroupKey,global);
+            var predictions=validation.Select(x=>(x.Actual,Prediction:Predict(x))).ToArray();
+            var mae=predictions.Average(x=>Math.Abs(x.Actual-x.Prediction));
+            var mse=predictions.Average(x=>(x.Actual-x.Prediction)*(x.Actual-x.Prediction));
+            var accuracy=predictions.Count(x=>Math.Sign(x.Actual)==Math.Sign(x.Prediction))/(decimal)predictions.Length;
+            metrics.Add(new(fold+1,embargoMinutes,training.Count,validation.Count,
+                validation.Min(x=>x.EventTimeUtc),validation.Max(x=>x.EventTimeUtc),Round(mae),
+                Round((decimal)Math.Sqrt((double)mse)),Round(accuracy)));
+        }
+        return metrics;
+    }
+
+    private sealed record Row(string Split,string InstrumentId,string ModuleId,string GroupKey,decimal Actual,
+        DateTime EventTimeUtc,DateTime OutcomeKnownAtUtc);
 }

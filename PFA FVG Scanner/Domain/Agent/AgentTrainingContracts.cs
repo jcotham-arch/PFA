@@ -62,8 +62,13 @@ public sealed record AgentBaselineSegmentMetric(string InstrumentId,string Split
 public sealed record AgentBaselineVariantMetric(string Variant,string Split,int SampleCount,
     decimal MeanAbsoluteError,decimal RootMeanSquaredError,decimal DirectionalAccuracy);
 
+public sealed record AgentWalkForwardMetric(int Fold,int EmbargoMinutes,int TrainingSamples,
+    int ValidationSamples,DateTime ValidationStartUtc,DateTime ValidationEndUtc,
+    decimal MeanAbsoluteError,decimal RootMeanSquaredError,decimal DirectionalAccuracy);
+
 public sealed record AgentBaselineRun(string RunId,string ModelVersion,string DatasetId,string DatasetContentHash,
     string TargetName,int TrainingSamples,int GroupCount,IReadOnlyList<AgentBaselineMetric> Metrics,
     DateTime TrainedAtUtc,string ContentHash,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false,
     IReadOnlyList<AgentBaselineSegmentMetric>? SegmentMetrics=null,
-    IReadOnlyList<AgentBaselineVariantMetric>? VariantMetrics=null);
+    IReadOnlyList<AgentBaselineVariantMetric>? VariantMetrics=null,
+    IReadOnlyList<AgentWalkForwardMetric>? WalkForwardMetrics=null);
