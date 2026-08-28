@@ -65,6 +65,14 @@ The fixed exit remains the least-negative validation result at -0.094R for faile
 
 Every derived notice retains the sequence identity, definition, instrument, timeframe, current and next role, knowledge clock, expiry clock, and point-in-time confidence. The API and Agent Center exclude the FVG-containing sequence from this non-FVG notification surface. All notices hard-code `IsActionable`, `CanActivateStrategy`, and `CanRouteToRealBroker` to false.
 
+## Sequence-conditioned trade evidence V1.0
+
+Run `STR-700BA3E7654B51B0ECC70A141868F89C` joins the immutable V1.3 trade samples to 9,764 completed named non-FVG sequences. A context sample is admitted only when the observation is the terminal sequence member and the persisted sequence completion clock is no later than the trade decision clock. Each of the 104,280 context samples retains lineage to the source sample, observation, hypothesis, sequence instance, definition, terminal role, and chronological split.
+
+The best validation row is the terminal range breakout after a liquidity-sweep-to-breakout sequence, using next-open entry, opposite-range stop, and fixed exit: -0.081R across 130 validation samples. It deteriorates to -0.170R across 150 untouched test samples. Breakout continuation is more stable but remains negative: approximately -0.092R validation and -0.064R test with the confirmation entry, opposite-range stop, and break-even exit. Breakout-failure and failed-breakout-reversal contexts also remain negative. Sequence completion therefore changes conditional ranking but does not establish a promotable edge.
+
+The sequence study is immutable and separately persisted from the source trade run. Its database contract prevents updates and deletions, and it cannot activate a strategy or route to a broker.
+
 ## Next research work
 
 1. Add entry variants: reclaim retest, boundary limit, and delayed confirmation.

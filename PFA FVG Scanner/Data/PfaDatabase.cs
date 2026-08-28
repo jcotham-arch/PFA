@@ -62,6 +62,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateAgentResearchDatasetTablesAsync(connection);
             await CreateAgentBaselineTablesAsync(connection);
             await CreatePatternTradeResearchTablesAsync(connection);
+            await CreateSequenceTradeResearchTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
@@ -89,6 +90,30 @@ namespace PFA_FVG_Scanner.Data
                     BEGIN SELECT RAISE(ABORT,'Pattern trade research runs are immutable');END;
                 CREATE TRIGGER IF NOT EXISTS TR_PatternTradeResearchRuns_NoDelete BEFORE DELETE ON PatternTradeResearchRuns
                     BEGIN SELECT RAISE(ABORT,'Pattern trade research runs are immutable');END;
+                """;await ExecuteAsync(connection,sql);
+        }
+
+        private static async Task CreateSequenceTradeResearchTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS SequenceTradeResearchRuns
+                (RunId TEXT PRIMARY KEY,EngineVersion TEXT NOT NULL,SourcePatternTradeRunId TEXT NOT NULL,AsOfUtc TEXT NOT NULL,
+                 SequenceCompletionCount INTEGER NOT NULL,ContextSampleCount INTEGER NOT NULL,ContentHash TEXT NOT NULL,
+                 RunJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 FOREIGN KEY(SourcePatternTradeRunId) REFERENCES PatternTradeResearchRuns(RunId));
+                CREATE TABLE IF NOT EXISTS SequenceTradeResearchSamples
+                (RunId TEXT NOT NULL,ContextSampleId TEXT NOT NULL,SourceSampleId TEXT NOT NULL,SequenceInstanceId TEXT NOT NULL,
+                 SequenceDefinitionId TEXT NOT NULL,Role TEXT NOT NULL,HypothesisId TEXT NOT NULL,ObservationId TEXT NOT NULL,
+                 Split TEXT NOT NULL,Outcome TEXT NOT NULL,NetR TEXT,SequenceKnownAtUtc TEXT NOT NULL,DecisionTimeUtc TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,PRIMARY KEY(RunId,ContextSampleId),
+                 FOREIGN KEY(RunId) REFERENCES SequenceTradeResearchRuns(RunId));
+                CREATE INDEX IF NOT EXISTS IX_SequenceTradeResearchSamples_Summary
+                    ON SequenceTradeResearchSamples(RunId,SequenceDefinitionId,HypothesisId,Split);
+                CREATE TRIGGER IF NOT EXISTS TR_SequenceTradeResearchRuns_NoUpdate BEFORE UPDATE ON SequenceTradeResearchRuns
+                    BEGIN SELECT RAISE(ABORT,'Sequence trade research runs are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_SequenceTradeResearchRuns_NoDelete BEFORE DELETE ON SequenceTradeResearchRuns
+                    BEGIN SELECT RAISE(ABORT,'Sequence trade research runs are immutable');END;
                 """;await ExecuteAsync(connection,sql);
         }
 

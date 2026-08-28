@@ -2,10 +2,10 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const number=value=>Number(value??0).toLocaleString();
 document.getElementById('baselineMeta').insertAdjacentHTML('afterend','<p id="promotionGate" class="baseline-warning">Promotion gate awaiting evidence.</p>');
 async function hydrate(){
-  const [moduleResponse,trainingResponse,datasetResponse,baselineResponse,patternTradeResponse,sequenceResponse]=await Promise.all([
+  const [moduleResponse,trainingResponse,datasetResponse,baselineResponse,patternTradeResponse,sequenceTradeResponse,sequenceResponse]=await Promise.all([
     fetch('/api/product/modules'),fetch('/api/product/modules/agent-training-readiness'),
     fetch('/api/agent/research-datasets'),fetch('/api/agent/baseline-runs'),fetch('/api/research/pattern-trades'),
-    fetch('/api/sequences/notifications?observationLimit=2000')]);
+    fetch('/api/research/sequence-trades'),fetch('/api/sequences/notifications?observationLimit=2000')]);
   if(!moduleResponse.ok)throw new Error(`Module API ${moduleResponse.status}`);
   const modules=await moduleResponse.json();
   document.getElementById('moduleTotal').textContent=`${modules.length} modules`;
@@ -31,6 +31,9 @@ async function hydrate(){
   }
   if(patternTradeResponse.ok){
     const runs=await patternTradeResponse.json();if(runs.length){const run=runs[0];document.getElementById('patternTradeState').textContent='EVALUATED';document.getElementById('patternTradeMeta').textContent=`${number(run.observationCount)} observations · ${number(run.hypothesisCount)} hypotheses · ${number(run.sampleCount)} cost-adjusted samples`;const validation=run.summaries.filter(x=>x.split==='Validation').sort((a,b)=>Number(b.meanNetR)-Number(a.meanNetR)).slice(0,10);document.getElementById('patternTradeRows').innerHTML=validation.map(metric=>{const test=run.summaries.find(x=>x.hypothesisId===metric.hypothesisId&&x.split==='Test');return `<tr><td>${esc(metric.moduleId)}</td><td>${esc(metric.entryPolicy)} · ${esc(metric.stopPolicy)} · ${esc(metric.exitPolicy||'fixed-target-or-time')} · ${esc(metric.directionPolicy)}</td><td>${number(metric.targetR)}R / ${number(metric.maximumHoldingMinutes)}m</td><td>${Number(metric.meanNetR).toFixed(3)}R</td><td>${test?Number(test.meanNetR).toFixed(3)+'R':'—'}</td></tr>`}).join('');}
+  }
+  if(sequenceTradeResponse.ok){
+    const runs=await sequenceTradeResponse.json();if(runs.length){const run=runs[0];document.getElementById('sequenceTradeState').textContent='EVALUATED';document.getElementById('sequenceTradeMeta').textContent=`${number(run.sequenceCompletionCount)} completed sequences · ${number(run.contextSampleCount)} point-in-time context samples`;const validation=run.summaries.filter(x=>x.split==='Validation').sort((a,b)=>Number(b.meanNetR)-Number(a.meanNetR)).slice(0,10);document.getElementById('sequenceTradeRows').innerHTML=validation.map(metric=>{const test=run.summaries.find(x=>x.sequenceDefinitionId===metric.sequenceDefinitionId&&x.hypothesisId===metric.hypothesisId&&x.split==='Test');return `<tr><td>${esc(metric.sequenceDefinitionId)}<br><small>${esc(metric.role)}</small></td><td>${esc(metric.moduleId)}</td><td>${esc(metric.entryPolicy)} · ${esc(metric.stopPolicy)} · ${esc(metric.exitPolicy)}</td><td>${Number(metric.meanNetR).toFixed(3)}R · ${number(metric.samples)} samples</td><td>${test?Number(test.meanNetR).toFixed(3)+'R · '+number(test.samples)+' samples':'—'}</td></tr>`}).join('');}
   }
   if(sequenceResponse.ok){
     const data=await sequenceResponse.json();const notices=data.notifications||[];document.getElementById('sequenceNoticeState').textContent='RESEARCH ONLY';document.getElementById('sequenceNoticeMeta').textContent=`${number(notices.length)} latest derived states · ${esc(data.semanticsVersion)}`;document.getElementById('sequenceNoticeRows').innerHTML=notices.length?notices.slice(0,12).map(x=>`<tr><td>${esc(new Date(x.knownAtUtc).toLocaleString())}</td><td>${esc(x.instrumentId)} · ${esc(x.timeframe)}</td><td>${esc(x.displayName)}<br><small>${esc(x.currentRole)}${x.nextRole?' → '+esc(x.nextRole):''}</small></td><td>${esc(x.state)}</td><td>${esc(x.message)}</td></tr>`).join(''):'<tr><td colspan="5">No non-FVG sequence states are currently available.</td></tr>';
