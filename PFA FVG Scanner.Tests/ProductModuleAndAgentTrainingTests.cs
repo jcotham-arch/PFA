@@ -94,6 +94,9 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.Equal(new[]{"Train","Validation","Test"},baseline.Metrics.Select(x=>x.Split));
         Assert.Equal(4,baseline.SegmentMetrics!.Count);
         Assert.All(baseline.SegmentMetrics,metric=>Assert.True(metric.SampleCount>0));
+        Assert.Equal(10,baseline.VariantMetrics!.Count);
+        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean"},
+            baseline.VariantMetrics.Select(x=>x.Variant).Distinct());
         Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
         Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));
     }

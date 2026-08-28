@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "grouped-mean-baseline-1.1.0";
+    public const string Version = "baseline-comparison-1.2.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -23,11 +23,15 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var globalMean = training.Average(x => x.Actual);
         var groups = training.GroupBy(x => x.GroupKey, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
+        var instrumentMeans = training.GroupBy(x => x.InstrumentId, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
+        var moduleMeans = training.GroupBy(x => x.ModuleId, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
-        AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population)
+        AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population, Func<Row,decimal> predictor)
         {
             if (population.Count == 0) return new AgentBaselineMetric(split, 0, 0, 0, 0, 0, 0);
-            var predictions = population.Select(x => (Actual: x.Actual, Prediction: Predict(x))).ToArray();
+            var predictions = population.Select(x => (Actual: x.Actual, Prediction: predictor(x))).ToArray();
             var mae = predictions.Average(x => Math.Abs(x.Actual - x.Prediction));
             var mse = predictions.Average(x => (x.Actual - x.Prediction) * (x.Actual - x.Prediction));
             var accuracy = predictions.Count(x => Math.Sign(x.Actual) == Math.Sign(x.Prediction)) /
@@ -37,20 +41,35 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
                 Round(predictions.Average(x => x.Prediction)));
         }
         var metrics = new[] { "Train", "Validation", "Test" }
-            .Select(split => Evaluate(split, rows.Where(x => x.Split == split).ToArray())).ToArray();
+            .Select(split => Evaluate(split, rows.Where(x => x.Split == split).ToArray(), Predict)).ToArray();
         var segmentMetrics = rows.Select(x => x.InstrumentId).Distinct().Order()
             .SelectMany(instrument => new[] { "Validation", "Test" }.Select(split =>
             {
-                var metric = Evaluate(split, rows.Where(x => x.Split == split && x.InstrumentId == instrument).ToArray());
+                var metric = Evaluate(split, rows.Where(x => x.Split == split && x.InstrumentId == instrument).ToArray(), Predict);
                 return new AgentBaselineSegmentMetric(instrument, split, metric.SampleCount, metric.MeanAbsoluteError,
                     metric.RootMeanSquaredError, metric.DirectionalAccuracy, metric.MeanActual, metric.MeanPrediction);
             })).ToArray();
+        var variants = new (string Name,Func<Row,decimal> Predict)[]
+        {
+            ("zero", _ => 0m),
+            ("global-mean", _ => globalMean),
+            ("instrument-mean", row => instrumentMeans.GetValueOrDefault(row.InstrumentId, globalMean)),
+            ("module-mean", row => moduleMeans.GetValueOrDefault(row.ModuleId, globalMean)),
+            ("instrument-module-direction-mean", Predict)
+        };
+        var variantMetrics = variants.SelectMany(variant => new[] { "Validation", "Test" }.Select(split =>
+        {
+            var metric = Evaluate(split, rows.Where(x => x.Split == split).ToArray(), variant.Predict);
+            return new AgentBaselineVariantMetric(variant.Name, split, metric.SampleCount, metric.MeanAbsoluteError,
+                metric.RootMeanSquaredError, metric.DirectionalAccuracy);
+        })).ToArray();
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
-            Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics });
+            Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
+            VariantMetrics=variantMetrics });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
-            SegmentMetrics:segmentMetrics);
+            SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics);
         await PersistAsync(run, token);
         return run;
     }
@@ -86,7 +105,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         {
             var labels = JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(4)) ?? [];
             if (!labels.TryGetValue(target, out var actual)) continue;
-            values.Add(new(reader.GetString(0), reader.GetString(1),
+            values.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 $"{reader.GetString(1)}|{reader.GetString(2)}|{reader.GetString(3)}", actual));
         }
         return (datasetHash, values);
@@ -110,5 +129,5 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     }
 
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
-    private sealed record Row(string Split,string InstrumentId,string GroupKey,decimal Actual);
+    private sealed record Row(string Split,string InstrumentId,string ModuleId,string GroupKey,decimal Actual);
 }
