@@ -14,7 +14,8 @@ namespace PFA_FVG_Scanner.Controllers;
 [Route("api/certification")]
 public sealed class CertificationDashboardController(
     PfaDatabase database,IInstrumentDefinitionRegistry instruments,IMarketPatternModuleRegistry patterns,
-    IMarketSequenceDefinitionRegistry sequences,MarketChartService charts,IMarketDataProvider provider):ControllerBase
+    IMarketSequenceDefinitionRegistry sequences,MarketChartService charts,IMarketDataProvider provider,
+    LivePilotReadinessProjectionService livePilot):ControllerBase
 {
     [HttpGet("dashboard")]
     public async Task<IActionResult> Dashboard(CancellationToken token)
@@ -41,7 +42,7 @@ public sealed class CertificationDashboardController(
             FROM CertificationCampaigns c JOIN CertificationResults r ON r.CampaignId=c.CampaignId
             ORDER BY r.EvaluatedAtUtc DESC LIMIT 25
             """,token);
-        return Ok(new
+        var livePilotReadiness=await livePilot.GetAsync(token);return Ok(new
         {
             generatedAtUtc=DateTime.UtcNow,mode="CertificationSandbox",startingBalance=50000m,realBrokerRoutes=false,liveCredentials=false,
             provider=new{provider.ProviderName,status=provider.ConnectionState.Status.ToString(),provider.ConnectionState.Message,connectedAtUtc=provider.ConnectionState.ConnectedAtUtc,lastCandleReceivedUtc=provider.ConnectionState.LastCandleReceivedUtc},
@@ -55,6 +56,7 @@ public sealed class CertificationDashboardController(
             certification=new{campaigns=await Count(connection,"CertificationCampaigns",null,token),results=certificationResults,
                 payoutEligible=await Count(connection,"CertificationResults","Status='PayoutEligible'",token),
                 liveRouting=false,automaticPromotion=false},
+            livePilotReadiness,
             sandbox=new{accounts=await Count(connection,"SandboxLedgerEvents","EventType='AccountCreated'",token),orders=await Count(connection,"SandboxLedgerEvents","EventType='OrderSubmitted'",token),fills=await Count(connection,"SandboxLedgerEvents","EventType='FillRecorded'",token),closedTrades=await Count(connection,"SandboxLedgerEvents","EventType='TradeClosed'",token),forwardCampaigns=await Count(connection,"ForwardCampaigns",null,token)},
             realism=new{executionEngine=CertificationExecutionEngine.Version,ruleEngine=PropFirmCertificationEngine.Version,reconciliationEngine=CertificationReconciliationEngine.Version,profile=PropFirmRulePackCatalog.PfaConservative50K(DateTime.UnixEpoch),features=new[]{"seeded latency and jitter","bid/ask execution","queue-ahead uncertainty","participation-limited partial fills","volatility and size impact","commissions","stale-feed rejection","venue outages","intraday trailing drawdown","daily loss and contract limits","news/session restrictions","automation permissions","payout gates","restart reconciliation"}}
         });

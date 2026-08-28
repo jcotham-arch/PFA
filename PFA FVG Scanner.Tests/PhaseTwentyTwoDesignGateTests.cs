@@ -1,4 +1,5 @@
 using PFA_FVG_Scanner.Domain.LivePilot;
+using PFA_FVG_Scanner.Services;
 
 namespace PFA_FVG_Scanner.Tests;
 
@@ -44,6 +45,17 @@ public sealed class PhaseTwentyTwoDesignGateTests
     {
         var decisions=Approved();var a=Auditor.Evaluate(new("LPR-6","1.0.0",decisions,Evidence(),Now));var b=Auditor.Evaluate(new("LPR-6","1.0.0",decisions.AsEnumerable().Reverse().ToArray(),Evidence(),Now));Assert.Equal(a.ReviewContentHash,b.ReviewContentHash);
         Assert.Throws<InvalidOperationException>(()=>Auditor.Evaluate(new("LPR-7","1.0.0",decisions.Append(decisions[0]).ToArray(),Evidence(),Now)));
+    }
+
+    [Fact]
+    public async Task EmptyDatabaseProjectionReportsEveryDecisionAndEvidenceGate()
+    {
+        using var factory=await TestDatabaseFactory.CreateAsync();
+        var projection=await new LivePilotReadinessProjectionService(factory.Database,Auditor)
+            .GetAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(LivePilotReadinessStatus.DesignReviewRequired,projection.Gate.Status);
+        Assert.Equal(11,projection.RequiredDecisionCount);Assert.Equal(0,projection.ApprovedDecisionCount);
+        Assert.Null(projection.EvidenceCandidate);Assert.False(projection.Gate.CanRouteToRealBroker);
     }
 
     private static List<LivePilotDesignDecision> Approved()=>LivePilotReadinessAuditor.RequiredTopics.Select((topic,i)=>new LivePilotDesignDecision(topic,"1.0.0",LivePilotDecisionStatus.Approved,$"{{\"boundedDecision\":{i}}}","design-authority",Now.AddMinutes(-10),$"decision-record:{topic}")).ToList();

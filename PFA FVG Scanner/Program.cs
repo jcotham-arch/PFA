@@ -21,6 +21,7 @@ using PFA_FVG_Scanner.Domain.Sandbox;
 using PFA_FVG_Scanner.Domain.Governance;
 using PFA_FVG_Scanner.Domain.Forward;
 using PFA_FVG_Scanner.Domain.Discovery;
+using PFA_FVG_Scanner.Domain.LivePilot;
 using PFA_FVG_Scanner.Domain.Timeline;
 using PFA_FVG_Scanner.MarketData;
 using PFA_FVG_Scanner.Services;
@@ -111,6 +112,8 @@ builder.Services.AddSingleton<PropFirmCertificationEngine>();
 builder.Services.AddSingleton<CertificationCampaignEngine>();
 builder.Services.AddSingleton<CertificationCampaignRepository>();
 builder.Services.AddSingleton<CertificationCampaignService>();
+builder.Services.AddSingleton<LivePilotReadinessAuditor>();
+builder.Services.AddSingleton<LivePilotReadinessProjectionService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES
