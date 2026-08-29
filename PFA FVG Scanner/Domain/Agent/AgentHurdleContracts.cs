@@ -5,6 +5,8 @@ public sealed record AgentHurdleHeadArtifact(string Head,string Target,IReadOnly
     IReadOnlyList<decimal> Means,IReadOnlyList<decimal> Scales,IReadOnlyList<decimal> Coefficients,string ContentHash);
 public sealed record AgentProbabilityCalibrationBin(int Bin,decimal LowerBound,decimal UpperBound,
     int TrainingSamples,decimal RawMeanProbability,decimal CalibratedProbability);
+public sealed record AgentProbabilityCalibrationGroup(string SegmentType,string SegmentId,int TrainingSamples,
+    IReadOnlyList<AgentProbabilityCalibrationBin> Bins);
 public sealed record AgentHurdleEconomicMetric(string Split,int Samples,int SelectedSamples,decimal ScoreThreshold,
     decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR,decimal ProfitabilityBrierScore,
     decimal RawProfitabilityBrierScore=0);
@@ -17,4 +19,5 @@ public sealed record AgentHurdleRun(string RunId,string ModelVersion,string Data
     IReadOnlyList<string> Reasons,DateTime TrainedAtUtc,string ContentHash,
     bool CanActivateStrategy=false,bool CanRouteToRealBroker=false,
     IReadOnlyList<AgentProbabilityCalibrationBin>? CalibrationBins=null,
-    IReadOnlyList<AgentHurdleSegmentMetric>? SegmentMetrics=null);
+    IReadOnlyList<AgentHurdleSegmentMetric>? SegmentMetrics=null,
+    IReadOnlyList<AgentProbabilityCalibrationGroup>? CalibrationGroups=null);

@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentHurdleTrainingService(PfaDatabase database)
 {
-    public const string Version="agent-hurdle-model-1.1.0";
+    public const string Version="agent-hurdle-model-1.2.0";
     public async Task<AgentHurdleRun> TrainAsync(AgentHurdleTrainingRequest request,CancellationToken token=default)
     {
         if(string.IsNullOrWhiteSpace(request.DatasetId))throw new ArgumentException("DatasetId is required.");
@@ -17,7 +17,8 @@ public sealed class AgentHurdleTrainingService(PfaDatabase database)
         var sample=EvenSample(train,6000);var probability=Fit(sample,x=>x.NetR>0?1m:0m);
         var positive=Fit(EvenSample(sample.Where(x=>x.NetR>0).ToArray(),3000),x=>x.NetR);
         var negative=Fit(EvenSample(sample.Where(x=>x.NetR<=0).ToArray(),3000),x=>x.NetR);
-        var calibration=Calibrate(sample,probability.Predict);decimal Calibrated(Row row)=>CalibrationValue(calibration,probability.Predict(row));
+        var calibration=Calibrate(sample,probability.Predict);var calibrationGroups=GroupCalibrations(sample,probability.Predict);
+        decimal Calibrated(Row row)=>HierarchicalCalibration(calibration,calibrationGroups,row,probability.Predict(row));
         decimal Score(Row row){var p=Calibrated(row);return p*Math.Max(0,positive.Predict(row))+(1-p)*Math.Min(0,negative.Predict(row));}
         var validationRows=rows.Where(x=>x.Split=="Validation").ToArray();var testRows=rows.Where(x=>x.Split=="Test").ToArray();
         var thresholds=Enumerable.Range(2,18).Select(x=>x*5).Select(p=>validationRows.OrderBy(x=>Score(x)).ElementAt((int)Math.Floor((validationRows.Length-1)*(p/100m))) is var row?Score(row):0).Distinct().ToArray();
@@ -29,8 +30,8 @@ public sealed class AgentHurdleTrainingService(PfaDatabase database)
         if(test.SelectedSamples<100||test.MeanNetR<=0||test.ProfitFactor<=1)reasons.Add("Untouched test hurdle policy lacks 100 trades, positive expectancy, or profit factor above 1.0.");
         var artifacts=new[]{Artifact("profitability-probability","profitable",probability),Artifact("positive-payoff","conditionalPositiveNetR",positive),Artifact("negative-payoff","conditionalNegativeNetR",negative)};
         var segments=Segments(rows.Where(x=>x.Split is "Validation" or "Test").ToArray(),probability.Predict,Calibrated);
-        var seed=JsonSerializer.Serialize(new{Version,request.DatasetId,hash,Threshold=selected.ScoreThreshold,Validation=selected,Test=test,Artifacts=artifacts,Calibration=calibration,Segments=segments});var contentHash=AgentTrainingDatasetBuilder.Hash(seed);
-        var run=new AgentHurdleRun($"AHR-{contentHash[..32]}",Version,request.DatasetId,hash,train.Length,selected.ScoreThreshold,selected,test,artifacts,reasons.Count==0?"EligibleForResearchReview":"Rejected",reasons,DateTime.UtcNow,contentHash,CalibrationBins:calibration,SegmentMetrics:segments);
+        var seed=JsonSerializer.Serialize(new{Version,request.DatasetId,hash,Threshold=selected.ScoreThreshold,Validation=selected,Test=test,Artifacts=artifacts,Calibration=calibration,CalibrationGroups=calibrationGroups,Segments=segments});var contentHash=AgentTrainingDatasetBuilder.Hash(seed);
+        var run=new AgentHurdleRun($"AHR-{contentHash[..32]}",Version,request.DatasetId,hash,train.Length,selected.ScoreThreshold,selected,test,artifacts,reasons.Count==0?"EligibleForResearchReview":"Rejected",reasons,DateTime.UtcNow,contentHash,CalibrationBins:calibration,SegmentMetrics:segments,CalibrationGroups:calibrationGroups);
         await Persist(run,token);return run;
     }
     public async Task<IReadOnlyList<AgentHurdleRun>> GetAllAsync(CancellationToken token=default)
@@ -41,6 +42,16 @@ public sealed class AgentHurdleTrainingService(PfaDatabase database)
     private static AgentProbabilityCalibrationBin[] Calibrate(Row[] rows,Func<Row,decimal> raw)
     {var global=rows.Count(x=>x.NetR>0)/(decimal)rows.Length;return Enumerable.Range(0,10).Select(bin=>{var members=rows.Where(x=>Bin(raw(x))==bin).ToArray();var mean=members.Length==0?(bin+.5m)/10m:members.Average(x=>Clamp(raw(x),0,1));var calibrated=(members.Count(x=>x.NetR>0)+20m*global)/(members.Length+20m);return new AgentProbabilityCalibrationBin(bin,bin/10m,(bin+1)/10m,members.Length,Round(mean),Round(calibrated));}).ToArray();}
     private static decimal CalibrationValue(IReadOnlyList<AgentProbabilityCalibrationBin> bins,decimal raw)=>bins[Bin(raw)].CalibratedProbability;
+    private static AgentProbabilityCalibrationGroup[] GroupCalibrations(Row[] rows,Func<Row,decimal> raw)
+    {return rows.SelectMany(x=>new[]{(Type:"Module",Id:x.Module,x),(Type:"Instrument",Id:x.Instrument,x)})
+        .GroupBy(x=>(x.Type,x.Id)).Where(x=>x.Count()>=200).OrderBy(x=>x.Key.Type).ThenBy(x=>x.Key.Id)
+        .Select(x=>{var values=x.Select(y=>y.x).ToArray();return new AgentProbabilityCalibrationGroup(x.Key.Type,x.Key.Id,values.Length,Calibrate(values,raw));}).ToArray();}
+    private static decimal HierarchicalCalibration(IReadOnlyList<AgentProbabilityCalibrationBin> global,
+        IReadOnlyList<AgentProbabilityCalibrationGroup> groups,Row row,decimal raw)
+    {var values=new List<(decimal Value,int Samples)>{(CalibrationValue(global,raw),global[Bin(raw)].TrainingSamples)};
+        foreach(var group in groups.Where(x=>(x.SegmentType=="Module"&&x.SegmentId==row.Module)||(x.SegmentType=="Instrument"&&x.SegmentId==row.Instrument)))
+        {var bin=group.Bins[Bin(raw)];values.Add((bin.CalibratedProbability,bin.TrainingSamples));}
+        var weighted=values.Sum(x=>x.Value*Math.Max(20,x.Samples));var weight=values.Sum(x=>Math.Max(20,x.Samples));return weight==0?Clamp(raw,0,1):weighted/weight;}
     private static int Bin(decimal probability)=>Math.Min(9,(int)(Clamp(probability,0,1)*10));
     private static AgentHurdleSegmentMetric[] Segments(Row[] rows,Func<Row,decimal> raw,Func<Row,decimal> calibrated)
     {return rows.SelectMany(x=>new[]{(Type:"Instrument",Id:x.Instrument,x),(Type:"Module",Id:x.Module,x)})
