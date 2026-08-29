@@ -10,7 +10,7 @@ public sealed class InteractiveProductSurfaceTests
     {
         var html=File.ReadAllText(Path.Combine(WebRoot,"index.html"));
         var script=File.ReadAllText(Path.Combine(WebRoot,"experience.js"));
-        Assert.Contains("/experience.js?v=1",html);Assert.Contains("PFA Setup Coach",script);
+        Assert.Contains("/experience.js?v=2",html);Assert.Contains("PFA Setup Coach",script);
         Assert.Contains("/api/sequences/notifications",script);Assert.Contains("/api/research/pattern-trades/notifications",script);
         Assert.Contains("pattern-example",script);Assert.Contains("data-jump-research",script);
     }

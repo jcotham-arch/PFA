@@ -20,7 +20,9 @@ public sealed class CertificationDashboardController(
     [HttpGet("dashboard")]
     public async Task<IActionResult> Dashboard(CancellationToken token)
     {
-        var coverage=await charts.GetAllCoverageAsync(token);var definitions=instruments.GetAll();await using var connection=database.CreateConnection();await connection.OpenAsync(token);
+        var coverage=await charts.GetAllCoverageAsync(token);
+        var definitions=instruments.GetAll().Where(x=>x.InstrumentId=="MES").ToArray();
+        await using var connection=database.CreateConnection();await connection.OpenAsync(token);
         var validated=await Rows(connection,"""
             SELECT d.StrategyId,d.StrategyVersion,d.DisplayName,
              COALESCE((SELECT ToStatus FROM StrategyLifecycleEvents e WHERE e.StrategyId=d.StrategyId AND e.StrategyVersion=d.StrategyVersion ORDER BY e.OccurredAtUtc DESC LIMIT 1),'Draft') Status

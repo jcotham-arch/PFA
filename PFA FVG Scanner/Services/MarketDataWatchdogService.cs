@@ -86,6 +86,20 @@ namespace PFA_FVG_Scanner.Services
         {
             LastHealthCheckUtc = DateTime.UtcNow;
 
+            string configuredProvider =
+                _configuration["MarketData:Provider"] ?? "Simulated";
+
+            if (configuredProvider.Equals("Massive", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(_configuration["Massive:ApiKey"]))
+            {
+                IsFeedHealthy = false;
+                IsFeedStale = false;
+                HealthMessage =
+                    "Massive is selected but no API key is configured. " +
+                    "Automatic recovery is paused until credentials are added.";
+                return;
+            }
+
             MarketDataConnectionState state =
                 _provider.ConnectionState;
 
