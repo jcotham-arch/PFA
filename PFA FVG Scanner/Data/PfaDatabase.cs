@@ -222,10 +222,20 @@ namespace PFA_FVG_Scanner.Data
                  CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_AdaptiveScenarioGenerations_Number
                     ON AdaptiveScenarioGenerations(InstrumentId,GenerationNumber);
+                CREATE TABLE IF NOT EXISTS AdaptiveScenarioEvaluations
+                (EvaluationId TEXT PRIMARY KEY,GenerationId TEXT NOT NULL,ChallengerId TEXT NOT NULL,ResearchRunId TEXT NOT NULL,
+                 Result TEXT NOT NULL,ContentHash TEXT NOT NULL,EvaluationJson TEXT NOT NULL,EvaluatedAtUtc TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 UNIQUE(GenerationId,ChallengerId),FOREIGN KEY(GenerationId) REFERENCES AdaptiveScenarioGenerations(GenerationId));
                 CREATE TRIGGER IF NOT EXISTS TR_AdaptiveScenarioGenerations_NoUpdate BEFORE UPDATE ON AdaptiveScenarioGenerations
                     BEGIN SELECT RAISE(ABORT,'Adaptive scenario generations are immutable');END;
                 CREATE TRIGGER IF NOT EXISTS TR_AdaptiveScenarioGenerations_NoDelete BEFORE DELETE ON AdaptiveScenarioGenerations
                     BEGIN SELECT RAISE(ABORT,'Adaptive scenario generations are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_AdaptiveScenarioEvaluations_NoUpdate BEFORE UPDATE ON AdaptiveScenarioEvaluations
+                    BEGIN SELECT RAISE(ABORT,'Adaptive scenario evaluations are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_AdaptiveScenarioEvaluations_NoDelete BEFORE DELETE ON AdaptiveScenarioEvaluations
+                    BEGIN SELECT RAISE(ABORT,'Adaptive scenario evaluations are immutable');END;
                 INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
                 VALUES('MES_ADAPTIVE_SCENARIO_LAB_V1',datetime('now'),
                     'Add immutable MES champion/challenger generations with chronological blind-data boundaries.');

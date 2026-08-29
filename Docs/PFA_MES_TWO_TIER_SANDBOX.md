@@ -30,6 +30,8 @@ Current live MES generation 2 has 54 resolved development trades across 40 disti
 
 The next layer replays queued challengers over chronological development windows, compares pattern families in parallel lanes, ranks champion versus challenger by stability rather than the best single result, freezes one survivor, and reserves a strictly later untouched date range for blind replay.
 
+The first replay-worker pass is now complete. It persisted three immutable, development-only research runs. A closer `0.25R` target improved training to `+0.098R` / PF `2.06` but failed validation at `-0.024R` / PF `0.87`. A 45-minute time-abort also failed validation at `-0.030R` / PF `0.90`. The break-even-after-`0.5R` exit survived development with training `+0.014R` / PF `1.05` and validation `+0.044R` / PF `1.15`. None of these evaluations generated or read Test-partition samples.
+
 ## Tier 2 — Proving Ground
 
 The existing certification lane remains strict. Standard sandbox instances require a validation-complete frozen strategy. The execution certification engine already models seeded latency and jitter, bid/ask execution, queue-ahead uncertainty, participation-limited partial fills, volatility and quantity slippage, commissions, stale data, and venue outages. Prop-firm certification already supports static, end-of-day trailing, and intraday high-water drawdown; daily loss, maximum contracts, session flatten, consistency, automation, payout, and operational-data rules.

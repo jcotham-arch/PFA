@@ -28,7 +28,7 @@ public sealed record PatternTradeResearchRequest(DateTime AsOfUtc,IReadOnlyList<
     IReadOnlyList<int>? MaximumHoldingMinutes=null,decimal StopBufferTicks=1m,
     decimal EstimatedRoundTripCostTicks=1m,IReadOnlyList<string>? StopPolicies=null,
     IReadOnlyList<string>? ExitPolicies=null,IReadOnlyList<string>? EntryPolicies=null,
-    int MaximumScenarioEvaluations=5_000_000);
+    int MaximumScenarioEvaluations=5_000_000,bool DevelopmentOnly=false);
 
 public sealed record PatternTradeHypothesisSummary(string HypothesisId,string ModuleId,string EntryPolicy,string StopPolicy,
     HypothesisDirectionPolicy DirectionPolicy,decimal TargetR,int MaximumHoldingMinutes,string Split,

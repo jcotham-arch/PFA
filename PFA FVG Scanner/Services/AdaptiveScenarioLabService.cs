@@ -7,7 +7,8 @@ using PFA_FVG_Scanner.Domain.Sandbox;
 
 namespace PFA_FVG_Scanner.Services;
 
-public sealed class AdaptiveScenarioLabService(PfaDatabase database,ExploratorySandboxCandidateService candidates)
+public sealed class AdaptiveScenarioLabService(PfaDatabase database,ExploratorySandboxCandidateService candidates,
+    PatternTradeResearchService research)
 {
     public const string PolicyVersion="mes-adaptive-scenario-lab-1.1.0";
     private const int MinimumDays=5;
@@ -17,7 +18,32 @@ public sealed class AdaptiveScenarioLabService(PfaDatabase database,ExploratoryS
     public async Task<AdaptiveScenarioDashboard> DashboardAsync(string instrumentId="MES",CancellationToken token=default)
     {
         Validate(instrumentId);var history=await History(token);
-        return new("MES",history.Count,history.FirstOrDefault(),history);
+        return new("MES",history.Count,history.FirstOrDefault(),history,await Evaluations(history.FirstOrDefault()?.GenerationId,token));
+    }
+
+    public async Task<AdaptiveScenarioDashboard> EvaluateLatestAsync(string instrumentId="MES",CancellationToken token=default)
+    {
+        Validate(instrumentId);var dashboard=await DashboardAsync("MES",token);var generation=dashboard.Latest;
+        if(generation?.Champion is null)return dashboard;var existing=(dashboard.Evaluations??[]).Select(x=>x.ChallengerId).ToHashSet(StringComparer.Ordinal);
+        foreach(var challenger in generation.Challengers.Where(x=>!existing.Contains(x.ChallengerId)))
+        {
+            var run=await research.RunAsync(new(generation.DevelopmentCutoffUtc,["MES"],[generation.Champion.ModuleId],
+                [challenger.TargetR],[challenger.MaximumHoldingMinutes],1m,1m,[challenger.StopPolicy],
+                [challenger.ExitPolicy],[challenger.EntryPolicy],5_000_000,true),token);
+            var train=run.Summaries.Single(x=>x.Split=="Train");var validation=run.Summaries.Single(x=>x.Split=="Validation");
+            var trainResolved=Resolved(train);var validationResolved=Resolved(validation);
+            var result=trainResolved>=30&&validationResolved>=10&&train.MeanNetR>0&&validation.MeanNetR>0&&train.ProfitFactor>1&&validation.ProfitFactor>1
+                ?"DevelopmentSurvivor":"DevelopmentRejected";
+            var interpretation=result=="DevelopmentSurvivor"
+                ?"The controlled mutation survived both development partitions. It remains unvalidated until frozen and replayed on a later untouched window."
+                :"The controlled mutation failed at least one development partition and will not consume blind-test evidence.";
+            var evaluated=DateTime.UtcNow;var seed=JsonSerializer.Serialize(new{generation.GenerationId,challenger.ChallengerId,run.RunId,result});
+            var hash=AgentTrainingDatasetBuilder.Hash(seed);var value=new AdaptiveScenarioEvaluation($"ASE-{hash[..32]}",generation.GenerationId,
+                challenger.ChallengerId,run.RunId,"MES",generation.Champion.ModuleId,trainResolved,train.MeanNetR,train.ProfitFactor,
+                validationResolved,validation.MeanNetR,validation.ProfitFactor,result,interpretation,evaluated,hash);
+            await PersistEvaluation(value,token);
+        }
+        return await DashboardAsync("MES",token);
     }
 
     public async Task<AdaptiveScenarioDashboard> GenerateAsync(string instrumentId="MES",CancellationToken token=default)
@@ -124,6 +150,22 @@ public sealed class AdaptiveScenarioLabService(PfaDatabase database,ExploratoryS
         var values=new List<AdaptiveScenarioGeneration>();await using var reader=await command.ExecuteReaderAsync(token);
         while(await reader.ReadAsync(token))values.Add(JsonSerializer.Deserialize<AdaptiveScenarioGeneration>(reader.GetString(0))!);return values;}
 
+    private async Task<IReadOnlyList<AdaptiveScenarioEvaluation>> Evaluations(string? generationId,CancellationToken token)
+    {if(generationId is null)return[];await using var connection=database.CreateConnection();await connection.OpenAsync(token);await using var command=connection.CreateCommand();
+        command.CommandText="SELECT EvaluationJson FROM AdaptiveScenarioEvaluations WHERE GenerationId=$generation ORDER BY EvaluatedAtUtc,ChallengerId";
+        command.Parameters.AddWithValue("$generation",generationId);var values=new List<AdaptiveScenarioEvaluation>();await using var reader=await command.ExecuteReaderAsync(token);
+        while(await reader.ReadAsync(token))values.Add(JsonSerializer.Deserialize<AdaptiveScenarioEvaluation>(reader.GetString(0))!);return values;}
+
+    private async Task PersistEvaluation(AdaptiveScenarioEvaluation value,CancellationToken token)
+    {await using var connection=database.CreateConnection();await connection.OpenAsync(token);await using var command=connection.CreateCommand();command.CommandText="""
+        INSERT OR IGNORE INTO AdaptiveScenarioEvaluations
+        (EvaluationId,GenerationId,ChallengerId,ResearchRunId,Result,ContentHash,EvaluationJson,EvaluatedAtUtc,CanActivateStrategy,CanRouteToRealBroker)
+        VALUES($id,$generation,$challenger,$run,$result,$hash,$json,$evaluated,0,0);
+        """;command.Parameters.AddWithValue("$id",value.EvaluationId);command.Parameters.AddWithValue("$generation",value.GenerationId);
+        command.Parameters.AddWithValue("$challenger",value.ChallengerId);command.Parameters.AddWithValue("$run",value.ResearchRunId);
+        command.Parameters.AddWithValue("$result",value.Result);command.Parameters.AddWithValue("$hash",value.ContentHash);
+        command.Parameters.AddWithValue("$json",JsonSerializer.Serialize(value));command.Parameters.AddWithValue("$evaluated",value.EvaluatedAtUtc.ToString("O"));await command.ExecuteNonQueryAsync(token);}
+
     private async Task Persist(AdaptiveScenarioGeneration value,CancellationToken token)
     {await using var connection=database.CreateConnection();await connection.OpenAsync(token);await using var command=connection.CreateCommand();command.CommandText="""
         INSERT OR IGNORE INTO AdaptiveScenarioGenerations
@@ -137,5 +179,6 @@ public sealed class AdaptiveScenarioLabService(PfaDatabase database,ExploratoryS
     private static void Validate(string instrumentId){if(!instrumentId.Trim().Equals("MES",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("The first adaptive scenario lab is intentionally MES-only.");}
     private static DateTime Parse(string value)=>DateTime.Parse(value,CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind).ToUniversalTime();
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
+    private static int Resolved(PatternTradeHypothesisSummary value)=>value.Samples-value.Ambiguous-value.NoEntryOrInvalid;
     private sealed record DevelopmentRow(string Timeframe,string TradingDate,decimal? NetR);
 }

@@ -30,7 +30,14 @@ public sealed record AdaptiveScenarioGeneration(string GenerationId,int Generati
     bool UsedTestPartitionForSelection=false,bool MutatesFrozenVersion=false,
     bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
 
+public sealed record AdaptiveScenarioEvaluation(string EvaluationId,string GenerationId,string ChallengerId,
+    string ResearchRunId,string InstrumentId,string ModuleId,int TrainResolved,decimal TrainMeanNetR,
+    decimal TrainProfitFactor,int ValidationResolved,decimal ValidationMeanNetR,decimal ValidationProfitFactor,
+    string Result,string Interpretation,DateTime EvaluatedAtUtc,string ContentHash,
+    bool EvaluatedTestPartition=false,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
+
 public sealed record AdaptiveScenarioDashboard(string InstrumentId,int Generations,
     AdaptiveScenarioGeneration? Latest,IReadOnlyList<AdaptiveScenarioGeneration> History,
+    IReadOnlyList<AdaptiveScenarioEvaluation>? Evaluations=null,
     string LearningRule="Development evidence proposes a new immutable challenger; blind evidence audits it and never rewrites the version under test.",
     bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);

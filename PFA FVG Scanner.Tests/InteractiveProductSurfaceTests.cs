@@ -24,6 +24,7 @@ public sealed class InteractiveProductSurfaceTests
         Assert.Contains("/agent-experience.js?v=1",agent);Assert.Contains("/experience.css",agent);
         Assert.Contains("/sandbox-experience.js?v=3",sandbox);Assert.Contains("/experience.css",sandbox);
         Assert.Contains("MES Adaptive Scenario Lab",sandbox);Assert.Contains("generateAdaptiveScenario",sandbox);
+        Assert.Contains("evaluateAdaptiveScenarios",sandbox);
         Assert.Contains("Refresh sandbox",sandboxScript);Assert.Contains("Simulation only",sandboxScript);
     }
 }

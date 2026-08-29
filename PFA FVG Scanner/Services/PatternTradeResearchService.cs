@@ -39,6 +39,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         var observations=await ReadObservationsAsync(asOf,roots,modules,token);
         if(observations.Count==0)throw new InvalidOperationException("No eligible non-FVG observations were found.");
         var splitObservations=AssignSplits(observations);
+        if(request.DevelopmentOnly)splitObservations=splitObservations.Where(x=>x.Split is "Train" or "Validation").ToList();
         var bars=await ReadBarsAsync(splitObservations.Select(x=>x.Observation.InstrumentId).Distinct().ToArray(),
             splitObservations.Min(x=>x.Observation.KnownAtUtc).AddMinutes(-1),asOf,token);
         var definitions=Definitions(modules,targetRs,holds,request.StopBufferTicks,request.EstimatedRoundTripCostTicks,requestedStops,entryPolicies,exitPolicies);
@@ -54,7 +55,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
                 samples.Add(PatternTradeHypothesisEngine.Evaluate(hypothesis,observation,window,definition.TickSize) with{Split=item.Split});
         }
         var summaries=Summarize(definitions,samples);var seed=JsonSerializer.Serialize(new
-        {PatternTradeHypothesisEngine.Version,asOf,roots,modules,targetRs,holds,entryPolicies,exitPolicies,request.StopBufferTicks,request.MaximumScenarioEvaluations,
+        {PatternTradeHypothesisEngine.Version,asOf,roots,modules,targetRs,holds,entryPolicies,exitPolicies,request.StopBufferTicks,request.MaximumScenarioEvaluations,request.DevelopmentOnly,
             request.EstimatedRoundTripCostTicks,Samples=samples.Select(x=>x.ContentHash),summaries});
         var hash=AgentTrainingDatasetBuilder.Hash(seed);var run=new PatternTradeResearchRun($"PTR-{hash[..32]}",
             PatternTradeHypothesisEngine.Version,asOf,splitObservations.Select(x=>x.Observation.InstrumentId).Distinct().Order().ToArray(),

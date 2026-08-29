@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using PFA_FVG_Scanner.Data;
 using PFA_FVG_Scanner.Domain.Research;
 using PFA_FVG_Scanner.Domain.Sandbox;
+using PFA_FVG_Scanner.Domain.Instruments;
 using PFA_FVG_Scanner.Services;
 
 namespace PFA_FVG_Scanner.Tests;
@@ -15,7 +16,8 @@ public sealed class AdaptiveScenarioLabServiceTests
     public async Task GenerationUsesDevelopmentRowsOnlyAndQueuesImmutableControlledMutations()
     {
         using var factory=await TestDatabaseFactory.CreateAsync();await Seed(factory.Database);
-        var service=new AdaptiveScenarioLabService(factory.Database,new ExploratorySandboxCandidateService(factory.Database));
+        var service=new AdaptiveScenarioLabService(factory.Database,new ExploratorySandboxCandidateService(factory.Database),
+            new PatternTradeResearchService(factory.Database,new InstrumentDefinitionRegistry()));
         var dashboard=await service.GenerateAsync("MES",TestContext.Current.CancellationToken);
         Assert.NotNull(dashboard.Latest);var generation=dashboard.Latest!;Assert.NotNull(generation.Champion);var champion=generation.Champion!;
         Assert.Equal(4,champion.DevelopmentTrades);Assert.Equal(2,champion.DistinctDevelopmentDays);
@@ -26,6 +28,14 @@ public sealed class AdaptiveScenarioLabServiceTests
         Assert.False(generation.CanActivateStrategy);Assert.Equal(AdaptiveScenarioGenerationStatus.AwaitingDevelopmentEvidence,generation.Status);
         Assert.Equal(new DateOnly(2026,8,30),generation.EarliestNextBlindTradingDate);
         Assert.DoesNotContain(champion.Segments,x=>x.Timeframe=="1h");
+        var evaluated=await service.EvaluateLatestAsync("MES",TestContext.Current.CancellationToken);
+        Assert.Equal(3,evaluated.Evaluations!.Count);Assert.All(evaluated.Evaluations,x=>Assert.False(x.EvaluatedTestPartition));
+        await using var connection=factory.Database.CreateConnection();await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command=connection.CreateCommand();command.CommandText="""
+            SELECT COUNT(*) FROM AdaptiveScenarioEvaluations e
+            JOIN PatternTradeResearchSamples s ON s.RunId=e.ResearchRunId WHERE s.Split='Test';
+            """;
+        Assert.Equal(0,Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
     }
 
     private static async Task Seed(PfaDatabase database)

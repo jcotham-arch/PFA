@@ -15,4 +15,8 @@ public sealed class AdaptiveScenarioLabController(AdaptiveScenarioLabService lab
     [HttpPost("generate")]
     public async Task<ActionResult<AdaptiveScenarioDashboard>> Generate([FromQuery]string instrumentId="MES",CancellationToken token=default)
     {try{return Ok(await lab.GenerateAsync(instrumentId,token));}catch(ArgumentException exception){return BadRequest(new{message=exception.Message});}}
+
+    [HttpPost("evaluate")]
+    public async Task<ActionResult<AdaptiveScenarioDashboard>> Evaluate([FromQuery]string instrumentId="MES",CancellationToken token=default)
+    {try{return Ok(await lab.EvaluateLatestAsync(instrumentId,token));}catch(ArgumentException exception){return BadRequest(new{message=exception.Message});}}
 }
