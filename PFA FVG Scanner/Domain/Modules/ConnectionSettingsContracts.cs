@@ -8,6 +8,7 @@ public sealed record ConnectionSettingsField(string FieldId,string DisplayName,s
 public sealed record ConnectionSettingsItem(string ConnectionId,string DisplayName,string Category,
     string Description,string AuthenticationMode,ConnectionSetupState State,string StateDetail,
     IReadOnlyList<string> Capabilities,IReadOnlyList<ConnectionSettingsField> Fields,
+    string ConnectivityEvidence,string? OfficialDocumentationUrl,
     bool CredentialMutationAvailable=false,bool RequiresAuthenticatedUser=true,
     bool RequiresEncryptedVault=true);
 
