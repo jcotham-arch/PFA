@@ -107,6 +107,8 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.NotNull(baseline.PromotionGate);Assert.Equal("Rejected",baseline.PromotionGate.Status);
         var ablations=Assert.IsAssignableFrom<IReadOnlyList<AgentContextAblationMetric>>(baseline.ContextAblations);
         Assert.NotEmpty(ablations);Assert.All(ablations,x=>Assert.True(x.TestSamples>0));
+        var familyAblations=Assert.IsAssignableFrom<IReadOnlyList<AgentContextFamilyAblationMetric>>(baseline.ContextFamilyAblations);
+        Assert.Equal(6,familyAblations.Count);Assert.Contains(familyAblations,x=>x.FamilyId=="seasonality");
         Assert.NotEmpty(baseline.PromotionGate.Reasons);Assert.False(baseline.CanActivateStrategy);
         Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
         Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));

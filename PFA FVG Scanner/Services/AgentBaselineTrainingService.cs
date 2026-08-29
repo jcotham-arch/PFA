@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-1.9.0";
+    public const string Version = "research-promotion-gate-2.0.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -30,6 +30,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var ridge = FitRidge(training, 1m);
         var ridgeBase = FitRidge(training,1m,name=>!IsResearchContextFeature(name));
         var ridgeContext = FitRidge(training,1m,IsResearchContextFeature);
+        var familyModels=ContextFamilies.ToDictionary(x=>x.Key,x=>FitRidge(training,1m,
+            name=>!IsResearchContextFeature(name)||name.StartsWith(x.Value,StringComparison.Ordinal)),StringComparer.Ordinal);
         var boostedStumps = FitBoostedStumps(training, 25, 0.10m);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
         AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population, Func<Row,decimal> predictor)
@@ -83,17 +85,28 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
                     contextMetric.DirectionalAccuracy,combinedMetric.DirectionalAccuracy,
                     Round(combinedMetric.DirectionalAccuracy-baseMetric.DirectionalAccuracy));
             }).ToArray();
+        var contextFamilyAblations=rows.Select(x=>x.ModuleId).Distinct(StringComparer.Ordinal).Order()
+            .SelectMany(module=>ContextFamilies.Keys.Select(family=>
+            {
+                var population=rows.Where(x=>x.Split=="Test"&&x.ModuleId==module).ToArray();
+                var baseMetric=Evaluate("Test",population,ridgeBase.Predict);
+                var familyMetric=Evaluate("Test",population,familyModels[family].Predict);
+                return new AgentContextFamilyAblationMetric(module,family,population.Length,
+                    baseMetric.MeanAbsoluteError,familyMetric.MeanAbsoluteError,baseMetric.DirectionalAccuracy,
+                    familyMetric.DirectionalAccuracy,Round(familyMetric.DirectionalAccuracy-baseMetric.DirectionalAccuracy));
+            })).ToArray();
         var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
         var promotionGate = BuildPromotionGate(variantMetrics, segmentMetrics, walkForwardMetrics);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
             Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
             VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate,
-            ContextAblations=contextAblations });
+            ContextAblations=contextAblations,ContextFamilyAblations=contextFamilyAblations });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
             SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics,
-            PromotionGate:promotionGate,ContextAblations:contextAblations);
+            PromotionGate:promotionGate,ContextAblations:contextAblations,
+            ContextFamilyAblations:contextFamilyAblations);
         await PersistAsync(run, token);
         return run;
     }
@@ -161,6 +174,9 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         name.StartsWith("context.volume.",StringComparison.Ordinal)||
         name.StartsWith("context.trend.",StringComparison.Ordinal)||
         name.StartsWith("context.momentum.",StringComparison.Ordinal);
+    private static readonly IReadOnlyDictionary<string,string> ContextFamilies=new Dictionary<string,string>(StringComparer.Ordinal)
+    {{"seasonality","time."},{"session","context.session."},{"volatility","context.volatility."},
+     {"volume","context.volume."},{"trend","context.trend."},{"momentum","context.momentum."}};
     private static DateTime Parse(string value)=>DateTime.Parse(value,null,DateTimeStyles.RoundtripKind).ToUniversalTime();
 
     private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda,Func<string,bool>? include=null)
