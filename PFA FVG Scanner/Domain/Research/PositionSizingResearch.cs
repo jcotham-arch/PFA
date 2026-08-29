@@ -4,6 +4,10 @@ public sealed record PositionSizingResearchRequest(decimal NetRPerContract,decim
     decimal RoundTurnCommissionPerContract,decimal AccountBalance,decimal MaximumDailyLossDollars,
     decimal MaximumDrawdownDollars,int MinimumContracts=1,int MaximumContracts=5);
 
+public sealed record PositionSizingAccountRequest(decimal RiskDollarsPerContract,
+    decimal RoundTurnCommissionPerContract,decimal AccountBalance,decimal MaximumDailyLossDollars,
+    decimal MaximumDrawdownDollars,int MinimumContracts=1,int MaximumContracts=5);
+
 public sealed record PositionSizingVariant(int Contracts,decimal GrossProfitLossDollars,decimal CommissionDollars,
     decimal NetProfitLossDollars,decimal CapitalAtRiskDollars,decimal CapitalAtRiskPercent,
     decimal DailyLossLimitUtilization,decimal DrawdownLimitUtilization,bool BreachesDailyLossLimit,
