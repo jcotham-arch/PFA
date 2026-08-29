@@ -2,11 +2,11 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const number=value=>Number(value??0).toLocaleString();
 document.getElementById('baselineMeta').insertAdjacentHTML('afterend','<p id="promotionGate" class="baseline-warning">Promotion gate awaiting evidence.</p>');
 async function hydrate(){
-  const [moduleResponse,trainingResponse,datasetResponse,baselineResponse,patternTradeResponse,sequenceTradeResponse,patternNoticeResponse,sequenceResponse]=await Promise.all([
+  const [moduleResponse,trainingResponse,datasetResponse,baselineResponse,patternTradeResponse,sequenceTradeResponse,patternNoticeResponse,sequenceResponse,contextResponse]=await Promise.all([
     fetch('/api/product/modules'),fetch('/api/product/modules/agent-training-readiness'),
     fetch('/api/agent/research-datasets'),fetch('/api/agent/baseline-runs'),fetch('/api/research/pattern-trades'),
     fetch('/api/research/sequence-trades'),fetch('/api/research/pattern-trades/notifications?limit=100'),
-    fetch('/api/sequences/notifications?observationLimit=2000')]);
+    fetch('/api/sequences/notifications?observationLimit=2000'),fetch('/api/research/context-families')]);
   if(!moduleResponse.ok)throw new Error(`Module API ${moduleResponse.status}`);
   const modules=await moduleResponse.json();
   document.getElementById('moduleTotal').textContent=`${modules.length} modules`;
@@ -14,6 +14,7 @@ async function hydrate(){
     `<article class="module-card ${module.requiresPaidEntitlement?'paid':'core'}"><header><span><strong>${esc(module.displayName)}</strong><small>${esc(module.kind)} · ${esc(module.version)}</small></span><em>${esc(preview.state)}</em></header><p>${esc(module.description)}</p><footer><span>${module.requiresPaidEntitlement?esc(module.subscriptionSku):'INCLUDED'}</span><span>${esc(module.integration)}</span></footer></article>`).join('');
   const agent=modules.find(x=>x.module.moduleId==='agent-research-lab');
   if(agent)document.getElementById('agentAccess').textContent=agent.preview.state;
+  if(contextResponse.ok){const catalog=await contextResponse.json();document.getElementById('contextTotal').textContent=`${number(catalog.families)} families`;document.getElementById('contextSummary').textContent=`${number(catalog.active)} active · ${number(catalog.foundation)} foundations · ${number(catalog.externalDataRequired)} require external feeds`;document.getElementById('contextCatalog').innerHTML=catalog.items.map(x=>`<article class="module-card ${x.maturity==='Active'?'core':'paid'}"><header><span><strong>${esc(x.name)}</strong><small>${esc(x.familyId)} · ${esc(x.version)}</small></span><em>${esc(x.maturity)}</em></header><p>${esc(x.description)}</p><p><small>${x.featureExamples.map(esc).join(' · ')}</small></p><footer><span>${x.agentFeatureEligible?'AGENT ELIGIBLE':'GATED'}</span><span>${x.requiredSources.map(esc).join(' + ')}</span></footer></article>`).join('');}
   if(trainingResponse.ok){
     const training=await trainingResponse.json();
     document.getElementById('trainingObservations').textContent=number(training.observations);
