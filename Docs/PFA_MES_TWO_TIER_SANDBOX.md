@@ -8,14 +8,17 @@ MES is the first and only instrument admitted to the initial exploratory lane. M
 
 Version `mes-exploratory-sandbox-admission-1.0.0` reads MES-only pattern-trade research runs and selects hypotheses using training and validation evidence only. Admission requires at least 30 resolved training samples, 10 resolved validation samples, positive mean net R in both partitions, and profit factor above 1.0 in both. Test evidence is explicitly withheld from selection.
 
-This is an early-observation gate, not a profitability claim. A candidate entering Tier 1 remains statistically unvalidated and cannot activate a strategy or route to a broker. The next Tier 1 implementation increments are:
+This is an early-observation gate, not a profitability claim. A candidate entering Tier 1 remains statistically unvalidated and cannot activate a strategy or route to a broker. Version `mes-tier1-blind-paper-replay-1.0.0` now:
 
-1. persist an immutable `Incubator` tier on a frozen exploratory strategy version;
-2. create an append-only exploratory campaign lifecycle;
-3. consume only market events known after the freeze clock;
-4. use a clearly labeled lightweight fill model until tick replay is available;
-5. retain every signal, abstention, fill, cost, position, and terminal outcome;
-6. terminate subscriptions and cancel working orders when a frozen culling rule is reached.
+1. freezes each admitted candidate as an immutable `FrozenResearch` strategy version;
+2. opens the withheld Test partition only after the candidate identity is frozen;
+3. persists immutable campaign, execution, and telemetry-supplement records;
+4. records requested entry, simulated fill, stop, target, exit, net R, MAE, MFE, and minute-resolution time to MAE/MFE;
+5. reports separate dollar economics and drawdown for one through five MES contracts;
+6. marks candidates for Tier 2 review only after at least 30 blind executions with positive mean net R and profit factor above 1.10;
+7. automatically terminates a Tier 1 candidate only when profit factor remains below 0.50 across at least 100 blind executions.
+
+The first real blind replay began on August 29, 2026. Four frozen pullback-continuation variants produced eight resolved executions in total. All eight lost, with mean net result `-0.596R` and profit factor `0.00`. Each candidate currently has only two resolved blind executions, so the evidence is negative but too small for the frozen 100-trade culling rule. The versions remain unchanged and are accumulating prospective evidence.
 
 ## Tier 2 — Proving Ground
 
@@ -25,10 +28,10 @@ Tier 1 status can never be treated as Tier 2 eligibility. A separate immutable t
 
 ## Telemetry status
 
-The append-only sandbox ledger currently retains signals, requested prices, orders, granted fill prices, commissions, slippage, timestamps, market source identity, data revision, positions, trades, and account performance. Research samples retain bar-derived MFE and MAE. The following remain data- and implementation-gated:
+The append-only sandbox ledger currently retains signals, requested prices, orders, granted fill prices, commissions, slippage, timestamps, market source identity, data revision, positions, trades, and account performance. Tier 1 campaign storage now adds immutable execution-level MFE, MAE, minute-resolution `time_to_mfe` and `time_to_mae`, inferred round-trip friction, and contract variants. The following remain data-gated:
 
 - a dedicated point-in-time `trade_telemetry` snapshot containing multi-level depth, 1-minute and 5-minute CVD trajectories, session VWAP distance, and availability/quality flags;
-- tick-by-tick MFE, MAE, `time_to_mfe`, and `time_to_mae` in milliseconds;
+- tick-resolution MFE, MAE, `time_to_mfe`, and `time_to_mae` rather than the current one-minute estimates;
 - prevailing spread and executed volume at the price level at the exact fill clock;
 - immutable links from every telemetry record to its candidate version, market-event sequence, and fill model.
 
@@ -52,4 +55,4 @@ Do not add infrastructure solely because dozens of models might exist later. Pro
 
 ## Culling
 
-The existing forward campaign monitor can automatically suspend degraded or operationally invalid campaigns and create governance incidents. Tier 1 still needs a separate frozen rolling culling policy, such as profit factor below 0.50 after 100 closed trades. Culling should terminate the campaign subscription and cancel working sandbox orders; it should not kill arbitrary operating-system processes. Any open virtual position requires an explicit close-or-quarantine policy and immutable audit.
+Tier 1 now has a frozen status rule: profit factor below 0.50 after 100 blind executions produces `Terminated`; at least 30 executions with positive mean net R and profit factor above 1.10 produces `Tier2ReviewEligible`. These are lifecycle classifications, never broker authority. Prospective event subscription, working-order cancellation, and explicit open-position close-or-quarantine behavior remain the next culling increment.

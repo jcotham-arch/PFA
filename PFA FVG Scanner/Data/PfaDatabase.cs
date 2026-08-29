@@ -66,6 +66,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateAgentHurdleTablesAsync(connection);
             await CreateActionabilitySegmentResearchTablesAsync(connection);
             await CreatePatternTradeResearchTablesAsync(connection);
+            await CreateExploratoryPaperCampaignTablesAsync(connection);
             await CreateSequenceTradeResearchTablesAsync(connection);
             await CreateTradeJournalTablesAsync(connection);
             await CreateTradeJournalAlignmentTablesAsync(connection);
@@ -129,6 +130,49 @@ namespace PFA_FVG_Scanner.Data
                     BEGIN SELECT RAISE(ABORT,'Sequence trade research runs are immutable');END;
                 CREATE TRIGGER IF NOT EXISTS TR_SequenceTradeResearchRuns_NoDelete BEFORE DELETE ON SequenceTradeResearchRuns
                     BEGIN SELECT RAISE(ABORT,'Sequence trade research runs are immutable');END;
+                """;await ExecuteAsync(connection,sql);
+        }
+
+        private static async Task CreateExploratoryPaperCampaignTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS ExploratoryPaperCampaigns
+                (CampaignId TEXT PRIMARY KEY,CandidateId TEXT NOT NULL,StrategyId TEXT NOT NULL,StrategyVersion TEXT NOT NULL,
+                 InstrumentId TEXT NOT NULL,SourcePatternTradeRunId TEXT NOT NULL,HypothesisId TEXT NOT NULL,
+                 Mode TEXT NOT NULL,Status TEXT NOT NULL,ExecutionCount INTEGER NOT NULL,ContentHash TEXT NOT NULL,
+                 CampaignJson TEXT NOT NULL,StartedAtUtc TEXT NOT NULL,CompletedAtUtc TEXT,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 FOREIGN KEY(SourcePatternTradeRunId) REFERENCES PatternTradeResearchRuns(RunId));
+                CREATE TABLE IF NOT EXISTS ExploratoryPaperExecutions
+                (CampaignId TEXT NOT NULL,ExecutionId TEXT NOT NULL,SourceSampleId TEXT NOT NULL,ObservationId TEXT NOT NULL,
+                 EntryTimeUtc TEXT NOT NULL,ExitTimeUtc TEXT NOT NULL,Outcome TEXT NOT NULL,NetR TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,ExecutionJson TEXT NOT NULL,PRIMARY KEY(CampaignId,ExecutionId),
+                 FOREIGN KEY(CampaignId) REFERENCES ExploratoryPaperCampaigns(CampaignId));
+                CREATE TABLE IF NOT EXISTS ExploratoryPaperTelemetrySupplements
+                (CampaignId TEXT NOT NULL,ExecutionId TEXT NOT NULL,TimeToMfeMilliseconds INTEGER,
+                 TimeToMaeMilliseconds INTEGER,ContentHash TEXT NOT NULL,SupplementJson TEXT NOT NULL,
+                 PRIMARY KEY(CampaignId,ExecutionId),
+                 FOREIGN KEY(CampaignId,ExecutionId) REFERENCES ExploratoryPaperExecutions(CampaignId,ExecutionId));
+                CREATE INDEX IF NOT EXISTS IX_ExploratoryPaperCampaigns_Candidate
+                    ON ExploratoryPaperCampaigns(CandidateId,StartedAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_ExploratoryPaperExecutions_Time
+                    ON ExploratoryPaperExecutions(CampaignId,EntryTimeUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_ExploratoryPaperCampaigns_NoUpdate BEFORE UPDATE ON ExploratoryPaperCampaigns
+                    BEGIN SELECT RAISE(ABORT,'Exploratory paper campaigns are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_ExploratoryPaperCampaigns_NoDelete BEFORE DELETE ON ExploratoryPaperCampaigns
+                    BEGIN SELECT RAISE(ABORT,'Exploratory paper campaigns are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_ExploratoryPaperExecutions_NoUpdate BEFORE UPDATE ON ExploratoryPaperExecutions
+                    BEGIN SELECT RAISE(ABORT,'Exploratory paper executions are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_ExploratoryPaperExecutions_NoDelete BEFORE DELETE ON ExploratoryPaperExecutions
+                    BEGIN SELECT RAISE(ABORT,'Exploratory paper executions are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_ExploratoryPaperTelemetrySupplements_NoUpdate BEFORE UPDATE ON ExploratoryPaperTelemetrySupplements
+                    BEGIN SELECT RAISE(ABORT,'Exploratory paper telemetry supplements are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_ExploratoryPaperTelemetrySupplements_NoDelete BEFORE DELETE ON ExploratoryPaperTelemetrySupplements
+                    BEGIN SELECT RAISE(ABORT,'Exploratory paper telemetry supplements are immutable');END;
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('MES_TIER1_EXPLORATORY_PAPER_V1',datetime('now'),
+                    'Add immutable MES Tier 1 blind-replay campaigns, execution telemetry and contract variants.');
                 """;await ExecuteAsync(connection,sql);
         }
 
