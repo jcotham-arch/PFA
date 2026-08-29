@@ -219,6 +219,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         name.StartsWith("context.volume.",StringComparison.Ordinal)||
         name.StartsWith("context.trend.",StringComparison.Ordinal)||
         name.StartsWith("context.momentum.",StringComparison.Ordinal)||
+        name.StartsWith("context.crossMarket.",StringComparison.Ordinal)||
         name.StartsWith("context.regime.",StringComparison.Ordinal)||
         name.StartsWith("context.interaction.",StringComparison.Ordinal)||
         name.StartsWith("context.availability.",StringComparison.Ordinal);
@@ -226,7 +227,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     {{"seasonality",["time."]},{"session",["context.session."]},{"volatility",["context.volatility."]},
      {"volume",["context.volume."]},{"trend",["context.trend."]},{"momentum",["context.momentum."]},
      {"regime-state",["context.regime."]},{"regime-interactions",["context.interaction."]},
-     {"source-availability",["context.availability."]}};
+     {"cross-market",["context.crossMarket."]},{"source-availability",["context.availability."]}};
     private static DateTime Parse(string value)=>DateTime.Parse(value,null,DateTimeStyles.RoundtripKind).ToUniversalTime();
 
     private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda,Func<string,bool>? include=null)

@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.7.0";
+    public const string Version = "generic-outcome-dataset-1.8.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -94,6 +94,7 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
     {
         await using var connection = database.CreateConnection();
         await connection.OpenAsync(token);
+        var crossMarket=await PointInTimeCrossMarketIndex.LoadAsync(connection,asOf,token);
         await using var command = connection.CreateCommand();
         var filter = instruments.Count == 0 ? "" :
             $" AND o.InstrumentId IN ({string.Join(',', instruments.Select((_, index) => $"$instrument{index}"))})";
@@ -176,7 +177,8 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             features["context.session.progressUtcDay"]=minuteOfDay/1440m;
             PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(19)?null:reader.GetString(19),
                 reader.IsDBNull(20)?null:reader.GetString(20),reader.IsDBNull(21)?null:reader.GetString(21),
-                reader.IsDBNull(22)?null:reader.GetString(22),reader.IsDBNull(23)?null:reader.GetString(23));
+                reader.IsDBNull(22)?null:reader.GetString(22),reader.IsDBNull(23)?null:reader.GetString(23),
+                crossMarket.SnapshotJson(reader.GetString(5),known));
             var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["directionalCloseTicks"] = Decimal(reader.GetString(16)),

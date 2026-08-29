@@ -9,11 +9,11 @@ namespace PFA_FVG_Scanner.Services;
 /// </summary>
 public static class PointInTimeContextFeatureEncoder
 {
-    public const string Version = "point-in-time-context-features-1.2.0";
+    public const string Version = "point-in-time-context-features-1.3.0";
 
     public static void Add(Dictionary<string, decimal> features, string? latestBarJson,
         string? priorCloseText, string? contextWindowJson,string? orderFlowSnapshotJson=null,
-        string? seasonalityHistoryJson=null)
+        string? seasonalityHistoryJson=null,string? crossMarketJson=null)
     {
         var latestAvailable = TryReadLatest(latestBarJson, out var close, out var high, out var low, out var volume);
         Gate(features, "canonical.latestBar", latestAvailable);
@@ -27,6 +27,8 @@ public static class PointInTimeContextFeatureEncoder
         Gate(features, "canonical.context20", contextAvailable);
         var seasonalAvailable=TryReadSeasonality(seasonalityHistoryJson,out var seasonal)&&seasonal.SampleCount>=10;
         Gate(features,"canonical.seasonalityHistory",seasonalAvailable);
+        var crossMarketAvailable=TryReadCrossMarket(crossMarketJson,out var peers)&&peers.Length>0;
+        Gate(features,"canonical.crossMarket",crossMarketAvailable);
 
         // These gates explicitly distinguish an absent external feed from a measured neutral value.
         var orderFlowAvailable=TryReadOrderFlow(orderFlowSnapshotJson,out var orderFlow);
@@ -60,6 +62,22 @@ public static class PointInTimeContextFeatureEncoder
                 features["context.seasonality.volumeVsClockBaseline"]=seasonal.MeanVolume==0?0:volume/seasonal.MeanVolume;}
             if(features.TryGetValue("direction",out var patternDirection))
                 features["context.interaction.directionAlignedSeasonalBias"]=Math.Sign(patternDirection)*(2*seasonal.PositiveCloseRate-1);
+        }
+
+        if(crossMarketAvailable)
+        {
+            var peerReturns=peers.Select(x=>x.Return5Fraction).ToArray();
+            var positive=peerReturns.Count(x=>x>0);var negative=peerReturns.Count(x=>x<0);
+            var breadth=(positive-negative)/(decimal)peers.Length;
+            features["context.crossMarket.peerCountLog"]=(decimal)Math.Log(1+peers.Length);
+            features["context.crossMarket.meanReturn5Fraction"]=peerReturns.Average();
+            features["context.crossMarket.meanAbsoluteReturn5Fraction"]=peerReturns.Average(Math.Abs);
+            features["context.crossMarket.positiveShare"]=positive/(decimal)peers.Length;
+            features["context.crossMarket.directionalBreadth"]=breadth;
+            features["context.crossMarket.returnDispersion"]=MeanAbsoluteDeviation(peerReturns);
+            foreach(var peer in peers)features[$"context.crossMarket.peerReturn5.{FeatureId(peer.InstrumentId)}"]=peer.Return5Fraction;
+            if(features.TryGetValue("direction",out var patternDirection))
+                features["context.interaction.directionAlignedCrossMarketBreadth"]=Math.Sign(patternDirection)*breadth;
         }
 
         if (latestAvailable)
@@ -170,6 +188,18 @@ public static class PointInTimeContextFeatureEncoder
            !TryDecimal(root,"positiveCloseRate",out var positive))return false;
         window=new((int)count,range,volume,meanReturn,meanAbsolute,positive);return true;}catch(JsonException){return false;}}
 
+    private static bool TryReadCrossMarket(string? json,out CrossMarketPeer[] peers)
+    {peers=[];if(string.IsNullOrWhiteSpace(json))return false;try{using var document=JsonDocument.Parse(json);
+        if(document.RootElement.ValueKind!=JsonValueKind.Array)return false;var values=new List<CrossMarketPeer>();
+        foreach(var item in document.RootElement.EnumerateArray())if(item.TryGetProperty("instrumentId",out var instrument)&&
+            instrument.ValueKind==JsonValueKind.String&&TryDecimal(item,"return5Fraction",out var value))
+            values.Add(new(instrument.GetString()!,value));peers=values.OrderBy(x=>x.InstrumentId,StringComparer.Ordinal).ToArray();return peers.Length>0;}
+        catch(JsonException){return false;}}
+
+    private static decimal MeanAbsoluteDeviation(decimal[] values)
+    {var mean=values.Average();return values.Average(x=>Math.Abs(x-mean));}
+    private static string FeatureId(string value)=>new(value.Select(x=>char.IsLetterOrDigit(x)||x is '-' or '_'?x:'_').ToArray());
+
     private static bool TryDecimal(JsonElement root, string name, out decimal value)
     {
         value = 0;
@@ -190,4 +220,5 @@ public static class PointInTimeContextFeatureEncoder
         decimal UnknownVolume,decimal Delta,decimal CumulativeDelta,decimal? PointOfControlPrice,decimal? LastBidAskImbalance);
     private readonly record struct SeasonalWindow(int SampleCount,decimal MeanRange,decimal MeanVolume,
         decimal MeanReturnFraction,decimal MeanAbsoluteReturnFraction,decimal PositiveCloseRate);
+    private readonly record struct CrossMarketPeer(string InstrumentId,decimal Return5Fraction);
 }

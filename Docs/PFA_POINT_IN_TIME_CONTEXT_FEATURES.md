@@ -1,6 +1,6 @@
 # Point-in-time context features
 
-Version: `point-in-time-context-features-1.2.0`
+Version: `point-in-time-context-features-1.3.0`
 
 This layer converts market state known at a scenario's decision clock into research-only agent features. It is shared by the universal outcome dataset and the actionability outcome dataset so both training paths use the same missing-data and regime semantics.
 
@@ -68,3 +68,11 @@ The actionability dataset builder now also accepts an explicit pattern-run ID an
 The point-in-time encoder now consumes an immutable Order Flow feature snapshot only when its window ended by the decision clock, it was known by that clock, it is no more than five minutes stale, it matches the instrument/contract, and it contains non-empty source references and volume. Eligible snapshots emit buy/sell/unknown shares, delta fraction, cumulative delta normalized by window volume, quoted-size imbalance, point-of-control distance, and a positive availability gate. Missing or stale snapshots emit only an availability value of zero; they do not invent neutral Order Flow measurements.
 
 The local production corpus currently reports `NoSourceData`: zero events, trades, quotes, and feature snapshots, with no production adapter selected. The Agent page now distinguishes an implemented Order Flow module from source readiness and labels it data-gated. `/api/order-flow/coverage` exposes the authoritative coverage state. Level II remains unavailable because no timestamped market-depth source exists.
+
+## Cross-market confirmation result
+
+Version `point-in-time-cross-market-1.0.0` resolves each related instrument's latest completed one-minute bar at or before the decision clock, requires that bar to be no more than two minutes stale, and computes its five-observed-bar return only when the lookback spans no more than ten minutes. The target instrument is excluded. Each snapshot retains the latest and prior canonical source IDs; future bars cannot enter a historical decision.
+
+Dataset `AGDS-4D5B4D1F4119684DE4AA33084ACAC4DF` contains 19,900 examples and 101 feature names. Cross-market evidence is available for 19,806 examples (99.5276%), drawing from synchronized MES, currency, crude-oil, and gold bars already present in the canonical corpus. The bounded in-memory index builds this dataset in approximately 16 seconds; it replaced an unacceptably slow correlated-query prototype.
+
+Baseline run `ABR-ADEAEA78AB1A0452FABFCF19ED266B84` remains globally rejected. The family ablation nevertheless identifies a module-specific research hypothesis: cross-market features improved untouched-test directional accuracy for failed breakouts by 3.1464 percentage points (45.4172% to 48.5636%) and range breakouts by 3.9525 points (43.7418% to 47.6943%), while slightly reducing MAE in both. They reduced liquidity-sweep accuracy by 3.0181 points. The FVG test slice contained only six examples and is not decision-grade. Cross-market confirmation must therefore be tested as a targeted breakout selector, not enabled globally.

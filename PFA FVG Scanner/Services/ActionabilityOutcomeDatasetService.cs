@@ -9,7 +9,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version="actionability-outcome-dataset-1.5.0";
+    public const string Version="actionability-outcome-dataset-1.6.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(ActionabilityOutcomeDatasetRequest request,
         CancellationToken token=default)
@@ -43,7 +43,9 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
         PatternTradeResearchRun run,IReadOnlyDictionary<string,PatternTradeHypothesisSummary> definitions,DateTime asOf,
         string[] instruments,string[] modules,CancellationToken token)
     {
-        var values=new List<GenericOutcomeResearchExample>();await using var command=connection.CreateCommand();command.CommandText="""
+        var values=new List<GenericOutcomeResearchExample>();
+        var crossMarket=await PointInTimeCrossMarketIndex.LoadAsync(connection,asOf,token);
+        await using var command=connection.CreateCommand();command.CommandText="""
             SELECT s.SampleJson,o.FormationTimeUtc,o.KnownAtUtc,o.Timeframe,o.PayloadJson,o.ContentHash,
                    (SELECT json_object('close',b.Close,'high',b.High,'low',b.Low,'volume',b.Volume)
                     FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
@@ -98,7 +100,7 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
             features["time.hourSin"]=(decimal)Math.Sin(2*Math.PI*minute/1440d);features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minute/1440d);
             features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)actionClock.DayOfWeek/7d);features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)actionClock.DayOfWeek/7d);
             features[$"context.session.{SessionSegment(actionClock.Hour)}"]=1m;features["context.session.progressUtcDay"]=minute/1440m;
-            PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(6)?null:reader.GetString(6),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),reader.IsDBNull(9)?null:reader.GetString(9),reader.IsDBNull(10)?null:reader.GetString(10));
+            PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(6)?null:reader.GetString(6),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),reader.IsDBNull(9)?null:reader.GetString(9),reader.IsDBNull(10)?null:reader.GetString(10),crossMarket.SnapshotJson(sample.InstrumentId,actionClock));
             var labels=new Dictionary<string,decimal>{{"netR",sample.NetR.Value},{"grossR",sample.GrossR??sample.NetR.Value},
                 {"maximumFavorableExcursionR",sample.MaximumFavorableExcursionR??0},{"maximumAdverseExcursionR",sample.MaximumAdverseExcursionR??0},
                 {"profitable",sample.NetR>0?1m:0m}};
