@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.5.0";
+    public const string Version = "generic-outcome-dataset-1.6.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -92,7 +92,12 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
                                  ROW_NUMBER() OVER (ORDER BY b.CloseTimeUtc DESC) rn
                           FROM CanonicalResolvedResearchBars b
                           WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m' AND b.CloseTimeUtc<=o.KnownAtUtc
-                          ORDER BY b.CloseTimeUtc DESC LIMIT 20) x) context20
+                          ORDER BY b.CloseTimeUtc DESC LIMIT 20) x) context20,
+                   (SELECT f.SnapshotJson FROM OrderFlowFeatureSnapshots f WHERE f.InstrumentId=o.InstrumentId
+                       AND f.WindowEndUtc<=o.KnownAtUtc AND f.KnownAtUtc<=o.KnownAtUtc
+                       AND julianday(f.WindowEndUtc)>=julianday(o.KnownAtUtc)-(5.0/1440.0)
+                       AND (f.ContractId IS NULL OR f.ContractId=o.ContractId)
+                       ORDER BY f.WindowEndUtc DESC,f.KnownAtUtc DESC LIMIT 1) orderFlow
             FROM UniversalMarketObservations o
             JOIN UniversalMarketOutcomes u ON u.ObservationId=o.ObservationId
             JOIN UniversalOutcomeMetrics close ON close.OutcomeId=u.OutcomeId
@@ -133,7 +138,8 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             features[$"context.session.{SessionSegment(known.Hour)}"]=1m;
             features["context.session.progressUtcDay"]=minuteOfDay/1440m;
             PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(19)?null:reader.GetString(19),
-                reader.IsDBNull(20)?null:reader.GetString(20),reader.IsDBNull(21)?null:reader.GetString(21));
+                reader.IsDBNull(20)?null:reader.GetString(20),reader.IsDBNull(21)?null:reader.GetString(21),
+                reader.IsDBNull(22)?null:reader.GetString(22));
             var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["directionalCloseTicks"] = Decimal(reader.GetString(16)),

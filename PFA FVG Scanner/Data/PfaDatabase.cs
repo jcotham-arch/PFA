@@ -433,6 +433,7 @@ namespace PFA_FVG_Scanner.Data
                     'Add isolated append-only order-flow events, classifications, feature snapshots and disabled retention policy.');
                 CREATE INDEX IF NOT EXISTS IX_OrderFlowEvents_InstrumentTime ON OrderFlowEvents(InstrumentId,EventTimeUtc,KnownAtUtc);
                 CREATE INDEX IF NOT EXISTS IX_OrderFlowSnapshots_InstrumentWindow ON OrderFlowFeatureSnapshots(InstrumentId,WindowStartUtc,WindowEndUtc);
+                CREATE INDEX IF NOT EXISTS IX_OrderFlowSnapshots_PointInTime ON OrderFlowFeatureSnapshots(InstrumentId,WindowEndUtc,KnownAtUtc,ContractId);
                 CREATE TRIGGER IF NOT EXISTS TR_OrderFlowEvents_NoUpdate BEFORE UPDATE ON OrderFlowEvents BEGIN SELECT RAISE(ABORT,'Order-flow events are append-only'); END;
                 CREATE TRIGGER IF NOT EXISTS TR_OrderFlowEvents_NoDelete BEFORE DELETE ON OrderFlowEvents BEGIN SELECT RAISE(ABORT,'Order-flow events are append-only'); END;
                 CREATE TRIGGER IF NOT EXISTS TR_OrderFlowTrades_NoUpdate BEFORE UPDATE ON OrderFlowClassifiedTrades BEGIN SELECT RAISE(ABORT,'Order-flow classifications are immutable'); END;

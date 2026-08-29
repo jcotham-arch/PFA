@@ -9,7 +9,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version="actionability-outcome-dataset-1.3.0";
+    public const string Version="actionability-outcome-dataset-1.4.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(ActionabilityOutcomeDatasetRequest request,
         CancellationToken token=default)
@@ -58,6 +58,11 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
                                  ROW_NUMBER() OVER (ORDER BY b.CloseTimeUtc DESC) rn
                           FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
                             AND b.CloseTimeUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc') ORDER BY b.CloseTimeUtc DESC LIMIT 20) x) context20
+                   ,(SELECT f.SnapshotJson FROM OrderFlowFeatureSnapshots f WHERE f.InstrumentId=o.InstrumentId
+                       AND f.WindowEndUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc') AND f.KnownAtUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc')
+                       AND julianday(f.WindowEndUtc)>=julianday(json_extract(s.SampleJson,'$.EntryTimeUtc'))-(5.0/1440.0)
+                       AND (f.ContractId IS NULL OR f.ContractId=json_extract(s.SampleJson,'$.ContractId'))
+                       ORDER BY f.WindowEndUtc DESC,f.KnownAtUtc DESC LIMIT 1) orderFlow
             FROM PatternTradeResearchSamples s JOIN UniversalMarketObservations o ON o.ObservationId=s.ObservationId
             WHERE s.RunId=$run AND s.NetR IS NOT NULL ORDER BY o.FormationTimeUtc,s.SampleId;
             """;command.Parameters.AddWithValue("$run",run.RunId);await using var reader=await command.ExecuteReaderAsync(token);
@@ -83,7 +88,7 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
             features["time.hourSin"]=(decimal)Math.Sin(2*Math.PI*minute/1440d);features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minute/1440d);
             features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)actionClock.DayOfWeek/7d);features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)actionClock.DayOfWeek/7d);
             features[$"context.session.{SessionSegment(actionClock.Hour)}"]=1m;features["context.session.progressUtcDay"]=minute/1440m;
-            PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(6)?null:reader.GetString(6),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8));
+            PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(6)?null:reader.GetString(6),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),reader.IsDBNull(9)?null:reader.GetString(9));
             var labels=new Dictionary<string,decimal>{{"netR",sample.NetR.Value},{"grossR",sample.GrossR??sample.NetR.Value},
                 {"maximumFavorableExcursionR",sample.MaximumFavorableExcursionR??0},{"maximumAdverseExcursionR",sample.MaximumAdverseExcursionR??0},
                 {"profitable",sample.NetR>0?1m:0m}};

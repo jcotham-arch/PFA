@@ -60,6 +60,18 @@ public sealed class PhaseSeventeenOrderFlowTests
         await using var connection=factory.Database.CreateConnection();await connection.OpenAsync(TestContext.Current.CancellationToken);await using var command=connection.CreateCommand();command.CommandText="DELETE FROM OrderFlowEvents";await Assert.ThrowsAsync<SqliteException>(()=>command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task CoverageDistinguishesNoSourceDataFromResearchSnapshots()
+    {
+        using var factory=await TestDatabaseFactory.CreateAsync();var repository=new OrderFlowRepository(factory.Database);
+        Assert.Equal("NoSourceData",(await repository.GetCoverageAsync(TestContext.Current.CancellationToken)).Status);
+        var service=Service(repository);await service.IngestAsync([Quote("Q",1,99,101,10,10,1),Trade("T",2,101,2,2)],TestContext.Current.CancellationToken);
+        Assert.Equal("EventsAwaitingSnapshots",(await repository.GetCoverageAsync(TestContext.Current.CancellationToken)).Status);
+        await service.BuildSnapshotAsync("MES","MESU6",Now,Now.AddSeconds(5),.25m,Now.AddSeconds(10),"REV-1",TestContext.Current.CancellationToken);
+        var coverage=await repository.GetCoverageAsync(TestContext.Current.CancellationToken);Assert.Equal("ResearchSnapshotsAvailable",coverage.Status);
+        Assert.Equal(2,coverage.Events);Assert.Equal(1,coverage.FeatureSnapshots);Assert.Contains("TEST",coverage.Providers);
+    }
+
     private static readonly DateTime Now=new(2026,8,27,14,0,0,DateTimeKind.Utc);
     private static ProviderOrderFlowEvent Trade(string id,long sequence,decimal price,decimal size,int receivedSecond,OrderFlowSourceOperation operation=OrderFlowSourceOperation.Original,string? corrects=null,int? eventSecond=null)=>new("TEST",id,"MES","MESU6","MESU6",OrderFlowEventKind.Trade,operation,sequence,Now.AddSeconds(eventSecond??receivedSecond),Now.AddSeconds(receivedSecond),price,size,CorrectsProviderEventId:corrects,SourceVersion:"test-1");
     private static ProviderOrderFlowEvent Quote(string id,long sequence,decimal bid,decimal ask,decimal bidSize,decimal askSize,int receivedSecond,int? eventSecond=null)=>new("TEST",id,"MES","MESU6","MESU6",OrderFlowEventKind.Quote,OrderFlowSourceOperation.Original,sequence,Now.AddSeconds(eventSecond??receivedSecond),Now.AddSeconds(receivedSecond),BidPrice:bid,AskPrice:ask,BidSize:bidSize,AskSize:askSize,SourceVersion:"test-1");

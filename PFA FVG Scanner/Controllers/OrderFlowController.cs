@@ -26,4 +26,6 @@ public sealed class OrderFlowController:ControllerBase
         exactProviderSourceSelected=false,installedProviderAdapters=Array.Empty<string>(),normalizedResearchIngestEnabled=true,
         candleDerivedOrderFlowForbidden=true,correctionAndCancelLineage=true,pointInTimeSafety=true,automaticDeletionEnabled=false,
         note="Provider payload semantics, entitlement, volume, and cost must be selected before a production adapter is enabled."});
+    [HttpGet("coverage")]
+    public async Task<ActionResult<OrderFlowCoverageReport>> Coverage(CancellationToken token)=>Ok(await _repository.GetCoverageAsync(token));
 }

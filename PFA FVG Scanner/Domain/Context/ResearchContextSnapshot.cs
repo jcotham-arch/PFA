@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using PFA_FVG_Scanner.Domain.Sessions;
 using PFA_FVG_Scanner.Domain.Timeline;
+using PFA_FVG_Scanner.Domain.OrderFlow;
 
 namespace PFA_FVG_Scanner.Domain.Context;
 
@@ -18,10 +19,10 @@ public sealed record ResearchContextSnapshot(string SnapshotId,string Version,st
 
 public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessions)
 {
-    public const string Version="bar-derived-context-1.1.0";
+    public const string Version="bar-derived-context-1.2.0";
 
     public ResearchContextSnapshot Build(string instrumentId,string? contractId,string timeframe,DateTime decisionTimeUtc,
-        IReadOnlyList<CanonicalBar> source)
+        IReadOnlyList<CanonicalBar> source,OrderFlowFeatureSnapshot? orderFlow=null)
     {
         var decision=Utc(decisionTimeUtc);var bars=source.Where(x=>x.IsComplete&&x.CloseTimeUtc<=decision&&
             x.InstrumentId.Equals(instrumentId,StringComparison.OrdinalIgnoreCase)&&
@@ -29,8 +30,7 @@ public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessi
         var recent=bars.TakeLast(120).ToArray();var refs=recent.Select(x=>$"{x.CanonicalBarId}:r{x.Revision}").ToArray();
         var values=new List<ResearchContextFeatureSet>{Seasonality(decision),Session(instrumentId,decision),
             Volatility(recent,refs),Volume(recent,refs),Trend(recent,refs),Momentum(recent,refs),
-            LiquidityProxy(recent,refs),ContractCycle(contractId,decision),
-            SourceUnavailable("order-flow","Timestamped trades-and-quotes history is not connected for this decision clock."),
+            LiquidityProxy(recent,refs),ContractCycle(contractId,decision),OrderFlow(instrumentId,contractId,decision,orderFlow),
             SourceUnavailable("level-two","Timestamped market-depth snapshots are not connected for this decision clock."),
             SourceUnavailable("options-positioning","A revisioned options-positioning source is not connected for this decision clock."),
             SourceUnavailable("market-breadth","A revisioned breadth source is not connected for this decision clock.")};
@@ -53,6 +53,12 @@ public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessi
     private static ResearchContextFeatureSet LiquidityProxy(CanonicalBar[] bars,string[] refs)
     {if(bars.Length<21)return Missing("liquidity-spread",bars.Length,21,refs);var ranges=bars.TakeLast(20).Select(x=>x.High-x.Low).ToArray();var volume=bars.TakeLast(20).Average(x=>x.Volume);return Available("liquidity-spread",new Dictionary<string,decimal>{{"barRange20",ranges.Average()},{"volume20",volume},{"rangePerVolume",volume==0?0:ranges.Average()/volume}},new Dictionary<string,string>{{"measurement","bar-proxy-only"}},refs,"Bid/ask spread and depth require quote data; these are candle-derived liquidity proxies only.");}
     private static ResearchContextFeatureSet ContractCycle(string? contractId,DateTime clock)=>new("contract-cycle",Version,ContextFeatureAvailability.InsufficientHistory,new Dictionary<string,decimal>(),new Dictionary<string,string>{{"contractId",contractId??"UNRESOLVED"}},[],"Expiration and rollover dates require a reviewed contract calendar.");
+    private static ResearchContextFeatureSet OrderFlow(string instrument,string? contractId,DateTime decision,OrderFlowFeatureSnapshot? value)
+    {if(value is null||!value.InstrumentId.Equals(instrument,StringComparison.OrdinalIgnoreCase)||(contractId is not null&&value.ContractId is not null&&value.ContractId!=contractId)||value.KnownAtUtc>decision||value.WindowEndUtc>decision||decision-value.WindowEndUtc>TimeSpan.FromMinutes(5)||value.TotalVolume<=0||value.SourceReferences.Count==0)
+            return SourceUnavailable("order-flow","No non-empty timestamped order-flow snapshot was known within five minutes of this decision clock.");
+        var numeric=new Dictionary<string,decimal>{{"totalVolume",value.TotalVolume},{"buyShare",value.BuyVolume/value.TotalVolume},{"sellShare",value.SellVolume/value.TotalVolume},{"unknownShare",value.UnknownVolume/value.TotalVolume},{"deltaFraction",value.Delta/value.TotalVolume},{"cumulativeDeltaToWindowVolume",value.CumulativeDelta/value.TotalVolume}};
+        if(value.PointOfControlPrice.HasValue)numeric["pointOfControlPrice"]=value.PointOfControlPrice.Value;if(value.LastBidAskImbalance.HasValue)numeric["lastBidAskImbalance"]=value.LastBidAskImbalance.Value;
+        return Available("order-flow",numeric,new Dictionary<string,string>{{"dataRevision",value.DataRevision},{"featureSetVersion",value.FeatureSetVersion}},value.SourceReferences);}
     private static decimal[] Returns(CanonicalBar[] bars)=>bars.Zip(bars.Skip(1),(a,b)=>a.Close==0?0:(b.Close-a.Close)/a.Close).ToArray();
     private static ResearchContextFeatureSet Missing(string id,int actual,int required,string[] refs)=>new(id,Version,ContextFeatureAvailability.InsufficientHistory,new Dictionary<string,decimal>(),new Dictionary<string,string>(),refs,$"Requires {required} completed bars; {actual} were available at the decision clock.");
     private static ResearchContextFeatureSet SourceUnavailable(string id,string reason)=>new(id,Version,ContextFeatureAvailability.SourceUnavailable,new Dictionary<string,decimal>(),new Dictionary<string,string>(),[],reason);

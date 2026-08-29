@@ -9,10 +9,10 @@ namespace PFA_FVG_Scanner.Services;
 /// </summary>
 public static class PointInTimeContextFeatureEncoder
 {
-    public const string Version = "point-in-time-context-features-1.0.0";
+    public const string Version = "point-in-time-context-features-1.1.0";
 
     public static void Add(Dictionary<string, decimal> features, string? latestBarJson,
-        string? priorCloseText, string? contextWindowJson)
+        string? priorCloseText, string? contextWindowJson,string? orderFlowSnapshotJson=null)
     {
         var latestAvailable = TryReadLatest(latestBarJson, out var close, out var high, out var low, out var volume);
         Gate(features, "canonical.latestBar", latestAvailable);
@@ -26,10 +26,24 @@ public static class PointInTimeContextFeatureEncoder
         Gate(features, "canonical.context20", contextAvailable);
 
         // These gates explicitly distinguish an absent external feed from a measured neutral value.
-        Gate(features, "external.orderFlow", false);
+        var orderFlowAvailable=TryReadOrderFlow(orderFlowSnapshotJson,out var orderFlow);
+        Gate(features, "external.orderFlow", orderFlowAvailable);
         Gate(features, "external.levelTwo", false);
         Gate(features, "external.optionsPositioning", false);
         Gate(features, "external.marketBreadth", false);
+
+        if(orderFlowAvailable)
+        {
+            features["context.orderFlow.totalVolumeLog"]=(decimal)Math.Log(1+(double)Math.Max(0,orderFlow.TotalVolume));
+            features["context.orderFlow.buyShare"]=orderFlow.TotalVolume==0?0:orderFlow.BuyVolume/orderFlow.TotalVolume;
+            features["context.orderFlow.sellShare"]=orderFlow.TotalVolume==0?0:orderFlow.SellVolume/orderFlow.TotalVolume;
+            features["context.orderFlow.unknownShare"]=orderFlow.TotalVolume==0?0:orderFlow.UnknownVolume/orderFlow.TotalVolume;
+            features["context.orderFlow.deltaFraction"]=orderFlow.TotalVolume==0?0:orderFlow.Delta/orderFlow.TotalVolume;
+            features["context.orderFlow.cumulativeDeltaToWindowVolume"]=orderFlow.TotalVolume==0?0:orderFlow.CumulativeDelta/orderFlow.TotalVolume;
+            if(orderFlow.LastBidAskImbalance.HasValue)features["context.orderFlow.lastBidAskImbalance"]=orderFlow.LastBidAskImbalance.Value;
+            if(latestAvailable&&close!=0&&orderFlow.PointOfControlPrice.HasValue)
+                features["context.orderFlow.pointOfControlDistanceFraction"]=(orderFlow.PointOfControlPrice.Value-close)/close;
+        }
 
         if (latestAvailable)
         {
@@ -118,6 +132,20 @@ public static class PointInTimeContextFeatureEncoder
         catch (JsonException) { return false; }
     }
 
+    private static bool TryReadOrderFlow(string? json,out OrderFlowWindow window)
+    {
+        window=default;if(string.IsNullOrWhiteSpace(json))return false;
+        try
+        {using var document=JsonDocument.Parse(json);var root=document.RootElement;
+            if(!TryDecimal(root,"TotalVolume",out var total)||total<=0||!TryDecimal(root,"BuyVolume",out var buy)||
+               !TryDecimal(root,"SellVolume",out var sell)||!TryDecimal(root,"UnknownVolume",out var unknown)||
+               !TryDecimal(root,"Delta",out var delta)||!TryDecimal(root,"CumulativeDelta",out var cumulative))return false;
+            decimal? poc=TryDecimal(root,"PointOfControlPrice",out var p)?p:null;
+            decimal? imbalance=TryDecimal(root,"LastBidAskImbalance",out var i)?i:null;
+            window=new(total,buy,sell,unknown,delta,cumulative,poc,imbalance);return true;}
+        catch(JsonException){return false;}
+    }
+
     private static bool TryDecimal(JsonElement root, string name, out decimal value)
     {
         value = 0;
@@ -134,4 +162,6 @@ public static class PointInTimeContextFeatureEncoder
 
     private readonly record struct ContextWindow(int BarCount, decimal MeanRange5, decimal MeanRange20,
         decimal MeanVolume5, decimal MeanVolume20, decimal MeanBody20, decimal High20, decimal Low20);
+    private readonly record struct OrderFlowWindow(decimal TotalVolume,decimal BuyVolume,decimal SellVolume,
+        decimal UnknownVolume,decimal Delta,decimal CumulativeDelta,decimal? PointOfControlPrice,decimal? LastBidAskImbalance);
 }

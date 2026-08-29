@@ -10,17 +10,21 @@ public sealed class PointInTimeContextFeatureEncoderTests
         var features=new Dictionary<string,decimal>{{"direction",1}};
         PointInTimeContextFeatureEncoder.Add(features,
             "{\"close\":\"102\",\"high\":\"103\",\"low\":\"100\",\"volume\":\"160\"}","100",
-            "{\"barCount\":20,\"meanRange5\":1.4,\"meanRange20\":2,\"meanVolume5\":130,\"meanVolume20\":100,\"meanBody20\":1.3,\"high20\":105,\"low20\":95}");
+            "{\"barCount\":20,\"meanRange5\":1.4,\"meanRange20\":2,\"meanVolume5\":130,\"meanVolume20\":100,\"meanBody20\":1.3,\"high20\":105,\"low20\":95}",
+            "{\"TotalVolume\":100,\"BuyVolume\":65,\"SellVolume\":30,\"UnknownVolume\":5,\"Delta\":35,\"CumulativeDelta\":120,\"PointOfControlPrice\":101.5,\"LastBidAskImbalance\":0.2}");
 
         Assert.Equal(1,features["context.availability.canonical.latestBar"]);
         Assert.Equal(1,features["context.availability.canonical.context20"]);
-        Assert.Equal(0,features["context.availability.external.orderFlow"]);
+        Assert.Equal(1,features["context.availability.external.orderFlow"]);
         Assert.Equal(0,features["context.availability.external.levelTwo"]);
         Assert.Equal(1,features["context.regime.volatility.expansion"]);
         Assert.Equal(1,features["context.regime.volume.high"]);
         Assert.Equal(1,features["context.regime.auction.directional"]);
         Assert.Equal(1,features["context.interaction.highVolumeExpansion"]);
         Assert.True(features["context.interaction.directionAlignedMomentum5"]>0);
+        Assert.Equal(.65m,features["context.orderFlow.buyShare"]);
+        Assert.Equal(.35m,features["context.orderFlow.deltaFraction"]);
+        Assert.Equal(.2m,features["context.orderFlow.lastBidAskImbalance"]);
     }
 
     [Fact]

@@ -3,6 +3,8 @@ using PFA_FVG_Scanner.Domain.Modules;
 using PFA_FVG_Scanner.Domain.Observations;
 using PFA_FVG_Scanner.Domain.Patterns;
 using PFA_FVG_Scanner.Domain.Timeline;
+using PFA_FVG_Scanner.Domain.OrderFlow;
+using PFA_FVG_Scanner.Data;
 using PFA_FVG_Scanner.Services;
 
 namespace PFA_FVG_Scanner.Tests;
@@ -80,12 +82,16 @@ public sealed class ProductModuleAndAgentTrainingTests
                  new("maximum-adverse-excursion",15,2,"ticks",measured)],[],MarketDataQualityFlags.None);
             await repository.SaveOutcomeAsync(outcome,TestContext.Current.CancellationToken);
         }
+        var flowKnown=Now.AddDays(-10);await new OrderFlowRepository(factory.Database).SaveSnapshotAsync(new(
+            "FLOW-MES","MES","MESU6",flowKnown.AddMinutes(-1),flowKnown,flowKnown,"SESSION","assignment-1","1.0.0","REV-1",
+            100,60,35,5,25,80,101,.2m,[],["EVENT-1"],OrderFlowQualityFlags.None,"FLOW-HASH"),TestContext.Current.CancellationToken);
         var service=new GenericOutcomeDatasetService(factory.Database);var request=new GenericOutcomeDatasetRequest(Now,15,["MES","6E"]);
         var first=await service.BuildAsync(request,TestContext.Current.CancellationToken);
         var repeated=await service.BuildAsync(request,TestContext.Current.CancellationToken);
         Assert.Equal(first.ContentHash,repeated.ContentHash);Assert.Equal(20,first.ExampleCount);
         Assert.Equal(14,first.TrainCount);Assert.Equal(2,first.ValidationCount);Assert.Equal(4,first.TestCount);
         Assert.Contains("time.hourSin",first.FeatureNames);Assert.Contains("context.instrument.MES",first.FeatureNames);
+        Assert.Contains("context.orderFlow.deltaFraction",first.FeatureNames);
         Assert.False(first.CanActivateStrategy);Assert.False(first.CanRouteToRealBroker);
         Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
         var training=new AgentBaselineTrainingService(factory.Database);

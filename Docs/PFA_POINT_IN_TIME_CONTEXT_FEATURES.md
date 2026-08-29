@@ -54,3 +54,9 @@ Pattern run `PTR-06782AC8F111471E6BDC797B07D02814` tested true directional-close
 The campaign exposed a scale constraint as well as a market result. Future requests now have a five-million-scenario preflight cap, and immutable sample writes reuse a prepared command inside one transaction. The completed 3.5-million-sample run remains preserved; the safety change prevents accidental combinatorial grids from expanding without an explicit narrower design.
 
 The actionability dataset builder now also accepts an explicit pattern-run ID and defaults to a 500,000-source-sample cap. This prevents the latest broad exploratory campaign from silently replacing the narrower frozen training corpus. A larger run can still be selected intentionally by raising the cap after its storage and training cost is reviewed.
+
+## Order Flow source readiness
+
+The point-in-time encoder now consumes an immutable Order Flow feature snapshot only when its window ended by the decision clock, it was known by that clock, it is no more than five minutes stale, it matches the instrument/contract, and it contains non-empty source references and volume. Eligible snapshots emit buy/sell/unknown shares, delta fraction, cumulative delta normalized by window volume, quoted-size imbalance, point-of-control distance, and a positive availability gate. Missing or stale snapshots emit only an availability value of zero; they do not invent neutral Order Flow measurements.
+
+The local production corpus currently reports `NoSourceData`: zero events, trades, quotes, and feature snapshots, with no production adapter selected. The Agent page now distinguishes an implemented Order Flow module from source readiness and labels it data-gated. `/api/order-flow/coverage` exposes the authoritative coverage state. Level II remains unavailable because no timestamped market-depth source exists.

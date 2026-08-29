@@ -121,3 +121,8 @@ public sealed class OrderFlowFeatureEngine
 }
 
 public sealed record OrderFlowRetentionPolicy(string PolicyVersion,int RawEventRetentionDays,int FeatureRetentionDays,bool AutomaticDeletionEnabled=false);
+
+public sealed record OrderFlowCoverageReport(int Events,int Trades,int Quotes,int FeatureSnapshots,
+    DateTime? EarliestEventUtc,DateTime? LatestEventUtc,DateTime? LatestSnapshotKnownAtUtc,
+    IReadOnlyList<string> InstrumentIds,IReadOnlyList<string> Providers,string Status,
+    bool ProductionAdapterSelected=false,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
