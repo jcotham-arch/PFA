@@ -140,6 +140,7 @@ builder.Services.AddSingleton<PatternTradeResearchService>();
 builder.Services.AddSingleton<PatternTradeNotificationService>();
 builder.Services.AddSingleton<PatternObservationResearchService>();
 builder.Services.AddSingleton<SequenceTradeResearchService>();
+builder.Services.AddSingleton<TradeJournalImportService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES

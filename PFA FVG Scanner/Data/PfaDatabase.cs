@@ -67,6 +67,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateActionabilitySegmentResearchTablesAsync(connection);
             await CreatePatternTradeResearchTablesAsync(connection);
             await CreateSequenceTradeResearchTablesAsync(connection);
+            await CreateTradeJournalTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
@@ -127,6 +128,40 @@ namespace PFA_FVG_Scanner.Data
                     BEGIN SELECT RAISE(ABORT,'Sequence trade research runs are immutable');END;
                 CREATE TRIGGER IF NOT EXISTS TR_SequenceTradeResearchRuns_NoDelete BEFORE DELETE ON SequenceTradeResearchRuns
                     BEGIN SELECT RAISE(ABORT,'Sequence trade research runs are immutable');END;
+                """;await ExecuteAsync(connection,sql);
+        }
+
+        private static async Task CreateTradeJournalTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS TradeJournalImports
+                (ImportId TEXT PRIMARY KEY,ImporterVersion TEXT NOT NULL,SourceFileName TEXT NOT NULL,
+                 SourceContentHash TEXT NOT NULL UNIQUE,SourceRows INTEGER NOT NULL,ExecutionCount INTEGER NOT NULL,
+                 EpisodeCount INTEGER NOT NULL,EarliestExecutionUtc TEXT NOT NULL,LatestExecutionUtc TEXT NOT NULL,
+                 NetProfit TEXT NOT NULL,ManifestJson TEXT NOT NULL,ImportedAtUtc TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                CREATE TABLE IF NOT EXISTS TradeJournalExecutions
+                (ImportId TEXT NOT NULL,ExecutionId TEXT NOT NULL,AccountHash TEXT NOT NULL,InstrumentId TEXT NOT NULL,
+                 ContractId TEXT NOT NULL,MovementTimeUtc TEXT NOT NULL,Movement TEXT NOT NULL,SourceRow INTEGER NOT NULL,
+                 ContentHash TEXT NOT NULL,ExecutionJson TEXT NOT NULL,PRIMARY KEY(ImportId,ExecutionId),
+                 FOREIGN KEY(ImportId) REFERENCES TradeJournalImports(ImportId));
+                CREATE TABLE IF NOT EXISTS TradeJournalEpisodes
+                (ImportId TEXT NOT NULL,EpisodeId TEXT NOT NULL,InstrumentId TEXT NOT NULL,ContractId TEXT NOT NULL,
+                 Direction TEXT NOT NULL,OpenedAtUtc TEXT NOT NULL,ClosedAtUtc TEXT NOT NULL,NetProfit TEXT NOT NULL,
+                 Outcome TEXT NOT NULL,ContentHash TEXT NOT NULL,EpisodeJson TEXT NOT NULL,PRIMARY KEY(ImportId,EpisodeId),
+                 FOREIGN KEY(ImportId) REFERENCES TradeJournalImports(ImportId));
+                CREATE INDEX IF NOT EXISTS IX_TradeJournalEpisodes_Entry
+                    ON TradeJournalEpisodes(ImportId,InstrumentId,OpenedAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_TradeJournalExecutions_Time
+                    ON TradeJournalExecutions(ImportId,InstrumentId,MovementTimeUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_TradeJournalImports_NoUpdate BEFORE UPDATE ON TradeJournalImports
+                    BEGIN SELECT RAISE(ABORT,'Trade journal imports are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_TradeJournalImports_NoDelete BEFORE DELETE ON TradeJournalImports
+                    BEGIN SELECT RAISE(ABORT,'Trade journal imports are immutable');END;
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('TRADE_JOURNAL_IMPORT_V1',datetime('now'),
+                    'Add privacy-safe immutable execution-journal imports and reconstructed trade episodes.');
                 """;await ExecuteAsync(connection,sql);
         }
 
