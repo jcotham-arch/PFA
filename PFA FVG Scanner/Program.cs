@@ -131,6 +131,7 @@ builder.Services.AddSingleton<GenericOutcomeDatasetService>();
 builder.Services.AddSingleton<ActionabilityOutcomeDatasetService>();
 builder.Services.AddSingleton<AgentBaselineTrainingService>();
 builder.Services.AddSingleton<AgentTrainingReadinessService>();
+builder.Services.AddSingleton<AgentSandboxPromotionReadinessService>();
 builder.Services.AddSingleton<PatternTradeResearchService>();
 builder.Services.AddSingleton<PatternTradeNotificationService>();
 builder.Services.AddSingleton<PatternObservationResearchService>();

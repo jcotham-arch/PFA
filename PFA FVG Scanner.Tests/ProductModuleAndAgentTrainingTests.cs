@@ -112,6 +112,8 @@ public sealed class ProductModuleAndAgentTrainingTests
         var artifact=Assert.Single(baseline.ModelArtifacts!);Assert.Equal("ridge-linear",artifact.Variant);
         var score=await training.ScoreAsync(baseline.RunId,Now,new Dictionary<string,decimal>(),TestContext.Current.CancellationToken);
         Assert.Equal(artifact.ArtifactId,score.ArtifactId);Assert.False(score.CanActivateStrategy);Assert.False(score.CanRouteToRealBroker);
+        var sandboxReadiness=await new AgentSandboxPromotionReadinessService(training).GetAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("NoNetRRun",sandboxReadiness.Status);Assert.False(sandboxReadiness.CanCreateProspectiveSandbox);
         Assert.NotEmpty(baseline.PromotionGate.Reasons);Assert.False(baseline.CanActivateStrategy);
         Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
         Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));
