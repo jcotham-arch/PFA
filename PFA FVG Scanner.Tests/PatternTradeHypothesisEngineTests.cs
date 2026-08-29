@@ -157,6 +157,9 @@ public sealed class PatternTradeHypothesisEngineTests
         Assert.Equal(ActionabilityOutcomeDatasetService.Version,dataset.DatasetVersion);
         Assert.Contains("netR",dataset.LabelNames);Assert.Contains("maximumFavorableExcursionR",dataset.LabelNames);
         Assert.True(dataset.ExampleCount>=3);Assert.Equal(0,dataset.TargetHorizonMinutes);
+        await using(var chronology=factory.Database.CreateConnection()){await chronology.OpenAsync(TestContext.Current.CancellationToken);
+            await using var command=chronology.CreateCommand();command.CommandText="SELECT COUNT(*) FROM AgentResearchExamples WHERE DatasetId=$id AND (FeatureKnownAtUtc<>DecisionTimeUtc OR OutcomeKnownAtUtc<=DecisionTimeUtc)";command.Parameters.AddWithValue("$id",dataset.DatasetId);
+            Assert.Equal(0L,Convert.ToInt64(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)));}
     }
 
     private static PatternTradeHypothesisDefinition Definition(string module)=>new($"test-{module}","1",module,

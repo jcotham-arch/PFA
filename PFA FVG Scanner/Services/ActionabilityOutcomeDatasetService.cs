@@ -9,7 +9,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version="actionability-outcome-dataset-1.0.0";
+    public const string Version="actionability-outcome-dataset-1.1.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(ActionabilityOutcomeDatasetRequest request,
         CancellationToken token=default)
@@ -62,17 +62,20 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
             features[$"policy.direction.{definition?.DirectionPolicy.ToString()??"unknown"}"]=1m;
             features["policy.targetR"]=definition?.TargetR??0;features["policy.maximumHoldingMinutes"]=definition?.MaximumHoldingMinutes??0;
             features["policy.initialRiskPoints"]=Math.Abs(sample.EntryPrice!.Value-sample.StopPrice!.Value);
-            var minute=sample.DecisionTimeUtc.Hour*60+sample.DecisionTimeUtc.Minute;
+            var actionClock=sample.EntryTimeUtc.Value;
+            features["policy.minutesRecognitionToEntry"]=(decimal)(actionClock-sample.DecisionTimeUtc).TotalMinutes;
+            var minute=actionClock.Hour*60+actionClock.Minute;
             features["time.hourSin"]=(decimal)Math.Sin(2*Math.PI*minute/1440d);features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minute/1440d);
-            features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)sample.DecisionTimeUtc.DayOfWeek/7d);features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)sample.DecisionTimeUtc.DayOfWeek/7d);
+            features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)actionClock.DayOfWeek/7d);features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)actionClock.DayOfWeek/7d);
             var labels=new Dictionary<string,decimal>{{"netR",sample.NetR.Value},{"grossR",sample.GrossR??sample.NetR.Value},
                 {"maximumFavorableExcursionR",sample.MaximumFavorableExcursionR??0},{"maximumAdverseExcursionR",sample.MaximumAdverseExcursionR??0},
                 {"profitable",sample.NetR>0?1m:0m}};
             var sourceRevision=AgentTrainingDatasetBuilder.Hash($"{run.ContentHash}|{sample.ContentHash}|{reader.GetString(5)}");
-            var content=AgentTrainingDatasetBuilder.Hash(JsonSerializer.Serialize(new{sample.SampleId,sample.Split,features,labels,sourceRevision}));
+            var content=AgentTrainingDatasetBuilder.Hash(JsonSerializer.Serialize(new{sample.SampleId,sample.Split,actionClock,
+                OutcomeKnownAt=sample.ExitTimeUtc.Value,features,labels,sourceRevision}));
             values.Add(new(sample.SampleId,sample.ObservationId,sample.SampleId,sample.InstrumentId,sample.ContractId,
                 reader.GetString(3),sample.ModuleId,sample.PatternType,sample.Direction,Parse(reader.GetString(1)),
-                sample.DecisionTimeUtc,sample.DecisionTimeUtc,sample.ExitTimeUtc.Value,sample.Split,features,labels,sourceRevision,content));
+                actionClock,actionClock,sample.ExitTimeUtc.Value,sample.Split,features,labels,sourceRevision,content));
         }
         return values;
     }
