@@ -92,6 +92,7 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.Equal(14,first.TrainCount);Assert.Equal(2,first.ValidationCount);Assert.Equal(4,first.TestCount);
         Assert.Contains("time.hourSin",first.FeatureNames);Assert.Contains("context.instrument.MES",first.FeatureNames);
         Assert.Contains("context.orderFlow.deltaFraction",first.FeatureNames);
+        Assert.Contains("context.availability.canonical.trend20",first.FeatureNames);
         var coverage=await service.GetFeatureCoverageAsync(first.DatasetId,"context.availability.",TestContext.Current.CancellationToken);
         Assert.Equal(20,coverage.ExampleCount);Assert.NotEmpty(coverage.Features);
         Assert.Contains(coverage.Features,x=>x.FeatureName=="context.availability.canonical.latestBar"&&x.PresentCount==20);

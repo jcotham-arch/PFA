@@ -2,7 +2,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public static class ActionabilityContextBucketEncoder
 {
-    public const string Version="actionability-context-buckets-1.1.0";
+    public const string Version="actionability-context-buckets-1.2.0";
 
     public static IReadOnlyList<string> Encode(IReadOnlyDictionary<string,decimal> features)
     {
@@ -14,12 +14,20 @@ public static class ActionabilityContextBucketEncoder
         var volume=State(features,"context.regime.volume.");
         var auction=State(features,"context.regime.auction.");
         var momentum=State(features,"context.momentum.direction.");
+        var trendBalance=State(features,"context.regime.trendBalance.");
+        var trendDirection=State(features,"context.regime.trendDirection.");
         Add(buckets,"volatility-regime",volatility);
         Add(buckets,"volume-regime",volume);
         Add(buckets,"auction-regime",auction);
         Add(buckets,"momentum",momentum);
+        Add(buckets,"trend-balance",trendBalance);
+        Add(buckets,"trend-direction",trendDirection);
         if(volatility is not null&&volume is not null)buckets.Add($"volatility-volume:{volatility}+{volume}");
         if(auction is not null&&momentum is not null)buckets.Add($"auction-momentum:{auction}+{momentum}");
+        if(trendBalance is not null&&trendDirection is not null)buckets.Add($"trend-state:{trendBalance}+{trendDirection}");
+        if(trendBalance is not null&&features.TryGetValue("direction",out var patternDirection)&&
+           features.TryGetValue("context.trend.signedEfficiency20",out var signedEfficiency))
+            buckets.Add($"trend-pattern:{(Math.Sign(patternDirection)*signedEfficiency>.2m?"aligned":Math.Sign(patternDirection)*signedEfficiency<-.2m?"opposed":"mixed")}");
 
         foreach(var feature in features.Where(x=>x.Key.StartsWith("context.interaction.",StringComparison.Ordinal)&&x.Value==1))
             buckets.Add($"active-interaction:{feature.Key["context.interaction.".Length..]}");

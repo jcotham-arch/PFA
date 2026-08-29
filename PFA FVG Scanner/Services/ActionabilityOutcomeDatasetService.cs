@@ -9,7 +9,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version="actionability-outcome-dataset-1.6.0";
+    public const string Version="actionability-outcome-dataset-1.7.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(ActionabilityOutcomeDatasetRequest request,
         CancellationToken token=default)
@@ -54,9 +54,14 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
                       AND b.CloseTimeUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc') ORDER BY b.CloseTimeUtc DESC LIMIT 1 OFFSET 5) priorClose,
                    (SELECT json_object('barCount',COUNT(*),'meanRange5',AVG(CASE WHEN x.rn<=5 THEN x.barRange END),'meanRange20',AVG(x.barRange),
                                        'meanVolume5',AVG(CASE WHEN x.rn<=5 THEN x.volume END),'meanVolume20',AVG(x.volume),
-                                       'meanBody20',AVG(x.body),'high20',MAX(x.high),'low20',MIN(x.low))
+                                       'meanBody20',AVG(x.body),'high20',MAX(x.high),'low20',MIN(x.low),
+                                       'firstClose20',MAX(CASE WHEN x.rn=20 THEN x.close END),
+                                       'latestClose20',MAX(CASE WHEN x.rn=1 THEN x.close END),
+                                       'pathBody20',SUM(x.body),'upBodyRate20',AVG(CASE WHEN x.signedBody>0 THEN 1.0 ELSE 0.0 END))
                     FROM (SELECT CAST(b.High AS REAL)-CAST(b.Low AS REAL) barRange,CAST(b.Volume AS REAL) volume,
-                                 ABS(CAST(b.Close AS REAL)-CAST(b.Open AS REAL)) body,CAST(b.High AS REAL) high,CAST(b.Low AS REAL) low,
+                                 ABS(CAST(b.Close AS REAL)-CAST(b.Open AS REAL)) body,
+                                 CAST(b.Close AS REAL)-CAST(b.Open AS REAL) signedBody,CAST(b.Close AS REAL) close,
+                                 CAST(b.High AS REAL) high,CAST(b.Low AS REAL) low,
                                  ROW_NUMBER() OVER (ORDER BY b.CloseTimeUtc DESC) rn
                           FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
                             AND b.CloseTimeUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc') ORDER BY b.CloseTimeUtc DESC LIMIT 20) x) context20

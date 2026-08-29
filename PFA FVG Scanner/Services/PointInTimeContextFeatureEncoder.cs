@@ -9,7 +9,7 @@ namespace PFA_FVG_Scanner.Services;
 /// </summary>
 public static class PointInTimeContextFeatureEncoder
 {
-    public const string Version = "point-in-time-context-features-1.3.0";
+    public const string Version = "point-in-time-context-features-1.4.0";
 
     public static void Add(Dictionary<string, decimal> features, string? latestBarJson,
         string? priorCloseText, string? contextWindowJson,string? orderFlowSnapshotJson=null,
@@ -25,6 +25,8 @@ public static class PointInTimeContextFeatureEncoder
 
         var contextAvailable = TryReadWindow(contextWindowJson, out var window) && window.BarCount >= 20;
         Gate(features, "canonical.context20", contextAvailable);
+        var trendAvailable=contextAvailable&&window.HasTrend;
+        Gate(features,"canonical.trend20",trendAvailable);
         var seasonalAvailable=TryReadSeasonality(seasonalityHistoryJson,out var seasonal)&&seasonal.SampleCount>=10;
         Gate(features,"canonical.seasonalityHistory",seasonalAvailable);
         var crossMarketAvailable=TryReadCrossMarket(crossMarketJson,out var peers)&&peers.Length>0;
@@ -114,6 +116,33 @@ public static class PointInTimeContextFeatureEncoder
         features["context.trend.meanBodyToRange20"] = bodyIntensity;
         features["context.trend.rangeWidth20"] = window.High20 - window.Low20;
 
+        if(trendAvailable)
+        {
+            var net=window.LatestClose20-window.FirstClose20;
+            var efficiency=window.PathBody20==0?0:Math.Abs(net)/window.PathBody20;
+            var signedEfficiency=window.PathBody20==0?0:net/window.PathBody20;
+            var width=window.High20-window.Low20;
+            var location=width==0?.5m:(window.LatestClose20-window.Low20)/width;
+            features["context.trend.netChangePoints20"]=net;
+            features["context.trend.netChangeFraction20"]=window.FirstClose20==0?0:net/window.FirstClose20;
+            features["context.trend.pathBodyPoints20"]=window.PathBody20;
+            features["context.trend.efficiency20"]=efficiency;
+            features["context.trend.signedEfficiency20"]=signedEfficiency;
+            features["context.trend.closeSlopePointsPerBar20"]=net/19m;
+            features["context.trend.closeLocation20"]=location;
+            features["context.trend.upBodyRate20"]=window.UpBodyRate20;
+            features["context.trend.directionalBodyRate20"]=2*window.UpBodyRate20-1;
+            var trendState=efficiency>=.45m?"trend":efficiency<=.20m?"balance":"transition";
+            var directionState=net>0?"up":net<0?"down":"flat";
+            OneHot(features,"context.regime.trendBalance",trendState);
+            OneHot(features,"context.regime.trendDirection",directionState);
+            if(features.TryGetValue("direction",out var patternDirection))
+            {
+                features["context.interaction.directionAlignedTrendEfficiency20"]=Math.Sign(patternDirection)*signedEfficiency;
+                features["context.interaction.directionAlignedRangeLocation20"]=Math.Sign(patternDirection)*(2*location-1);
+            }
+        }
+
         var volatilityState = rangeRatio >= 1.25m ? "expansion" : rangeRatio <= .75m ? "compression" : "normal";
         var volumeState = relativeVolume >= 1.25m ? "high" : relativeVolume <= .75m ? "low" : "normal";
         var auctionState = bodyIntensity >= .60m ? "directional" : bodyIntensity <= .30m ? "balanced" : "transition";
@@ -161,7 +190,11 @@ public static class PointInTimeContextFeatureEncoder
                 !TryDecimal(root, "meanRange20", out var range20) || !TryDecimal(root, "meanVolume5", out var volume5) ||
                 !TryDecimal(root, "meanVolume20", out var volume20) || !TryDecimal(root, "meanBody20", out var body20) ||
                 !TryDecimal(root, "high20", out var high20) || !TryDecimal(root, "low20", out var low20)) return false;
-            window = new((int)count, range5, range20, volume5, volume20, body20, high20, low20);
+            decimal firstClose=0,latestClose=0,pathBody=0,upBodyRate=0;
+            var hasTrend=TryDecimal(root,"firstClose20",out firstClose)&&TryDecimal(root,"latestClose20",out latestClose)&&
+                TryDecimal(root,"pathBody20",out pathBody)&&TryDecimal(root,"upBodyRate20",out upBodyRate);
+            window = new((int)count, range5, range20, volume5, volume20, body20, high20, low20,
+                hasTrend,firstClose,latestClose,pathBody,upBodyRate);
             return true;
         }
         catch (JsonException) { return false; }
@@ -215,7 +248,8 @@ public static class PointInTimeContextFeatureEncoder
         features[$"{family}.{state}"] = 1;
 
     private readonly record struct ContextWindow(int BarCount, decimal MeanRange5, decimal MeanRange20,
-        decimal MeanVolume5, decimal MeanVolume20, decimal MeanBody20, decimal High20, decimal Low20);
+        decimal MeanVolume5, decimal MeanVolume20, decimal MeanBody20, decimal High20, decimal Low20,
+        bool HasTrend,decimal FirstClose20,decimal LatestClose20,decimal PathBody20,decimal UpBodyRate20);
     private readonly record struct OrderFlowWindow(decimal TotalVolume,decimal BuyVolume,decimal SellVolume,
         decimal UnknownVolume,decimal Delta,decimal CumulativeDelta,decimal? PointOfControlPrice,decimal? LastBidAskImbalance);
     private readonly record struct SeasonalWindow(int SampleCount,decimal MeanRange,decimal MeanVolume,

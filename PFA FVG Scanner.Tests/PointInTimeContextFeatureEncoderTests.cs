@@ -10,19 +10,24 @@ public sealed class PointInTimeContextFeatureEncoderTests
         var features=new Dictionary<string,decimal>{{"direction",1}};
         PointInTimeContextFeatureEncoder.Add(features,
             "{\"close\":\"102\",\"high\":\"103\",\"low\":\"100\",\"volume\":\"160\"}","100",
-            "{\"barCount\":20,\"meanRange5\":1.4,\"meanRange20\":2,\"meanVolume5\":130,\"meanVolume20\":100,\"meanBody20\":1.3,\"high20\":105,\"low20\":95}",
+            "{\"barCount\":20,\"meanRange5\":1.4,\"meanRange20\":2,\"meanVolume5\":130,\"meanVolume20\":100,\"meanBody20\":1.3,\"high20\":105,\"low20\":95,\"firstClose20\":98,\"latestClose20\":102,\"pathBody20\":8,\"upBodyRate20\":0.7}",
             "{\"TotalVolume\":100,\"BuyVolume\":65,\"SellVolume\":30,\"UnknownVolume\":5,\"Delta\":35,\"CumulativeDelta\":120,\"PointOfControlPrice\":101.5,\"LastBidAskImbalance\":0.2}",
             "{\"sampleCount\":20,\"meanRange\":2,\"meanVolume\":80,\"meanReturnFraction\":0.001,\"meanAbsoluteReturnFraction\":0.003,\"positiveCloseRate\":0.6}",
             "[{\"instrumentId\":\"6E\",\"return5Fraction\":0.002},{\"instrumentId\":\"6J\",\"return5Fraction\":-0.001},{\"instrumentId\":\"MES\",\"return5Fraction\":0.003}]");
 
         Assert.Equal(1,features["context.availability.canonical.latestBar"]);
         Assert.Equal(1,features["context.availability.canonical.context20"]);
+        Assert.Equal(1,features["context.availability.canonical.trend20"]);
         Assert.Equal(1,features["context.availability.canonical.seasonalityHistory"]);
         Assert.Equal(1,features["context.availability.external.orderFlow"]);
         Assert.Equal(0,features["context.availability.external.levelTwo"]);
         Assert.Equal(1,features["context.regime.volatility.expansion"]);
         Assert.Equal(1,features["context.regime.volume.high"]);
         Assert.Equal(1,features["context.regime.auction.directional"]);
+        Assert.Equal(1,features["context.regime.trendBalance.trend"]);
+        Assert.Equal(1,features["context.regime.trendDirection.up"]);
+        Assert.Equal(.5m,features["context.trend.efficiency20"]);
+        Assert.Equal(.5m,features["context.interaction.directionAlignedTrendEfficiency20"]);
         Assert.Equal(1,features["context.interaction.highVolumeExpansion"]);
         Assert.True(features["context.interaction.directionAlignedMomentum5"]>0);
         Assert.Equal(.65m,features["context.orderFlow.buyShare"]);
@@ -45,6 +50,7 @@ public sealed class PointInTimeContextFeatureEncoderTests
 
         Assert.Equal(0,features["context.availability.canonical.latestBar"]);
         Assert.Equal(0,features["context.availability.canonical.context20"]);
+        Assert.Equal(0,features["context.availability.canonical.trend20"]);
         Assert.Equal(0,features["context.availability.canonical.seasonalityHistory"]);
         Assert.Equal(0,features["context.availability.canonical.crossMarket"]);
         Assert.DoesNotContain("context.volatility.meanRange20",features.Keys);

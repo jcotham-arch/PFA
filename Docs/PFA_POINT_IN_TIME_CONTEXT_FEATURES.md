@@ -9,6 +9,7 @@ This layer converts market state known at a scenario's decision clock into resea
 - Latest completed one-minute bar: range fraction, close location, and log volume.
 - Five-bar momentum: fractional return and positive, negative, or flat state.
 - Twenty-bar volatility: current-range ratio and short-window-to-baseline range ratio.
+- Twenty-bar trend quality: net close progress, signed and absolute path efficiency, close slope, recent-range location, directional body rate, and explicit trend/balance/transition plus up/down/flat states.
 - Twenty-bar participation: relative volume and five-to-twenty-bar volume acceleration.
 - Auction state: balanced, transition, or directional based on body-to-range behavior.
 - Interaction evidence: high-volume expansion, low-volume compression, directional expansion, direction-aligned momentum, and momentum-participation strength.
@@ -24,6 +25,14 @@ The bar-derived context snapshot likewise emits `SourceUnavailable` families for
 ## Historical same-clock seasonality
 
 Seasonality is now estimated only from earlier one-minute bars for the same instrument and UTC minute of day. The current decision bar is excluded (`CloseTimeUtc < DecisionTimeUtc`), the lookup is capped at the most recent 40 matching observations, and at least 10 prior observations are required. Until that minimum exists, `context.availability.canonical.seasonalityHistory` is zero and all historical-seasonality measurements are omitted.
+
+## Directional trend and balance context
+
+Version `point-in-time-context-features-1.4.0` adds directional information that the earlier body-intensity proxy could not express. The 20 completed one-minute bars at or before the decision clock now produce net close change, net change as a fraction of the oldest close, cumulative absolute candle-body path, signed and absolute efficiency, per-bar close slope, close location inside the 20-bar high/low range, and up-body participation. Efficiency classifies the window as trend, transition, or balance; net change separately classifies direction as up, down, or flat.
+
+Pattern alignment is explicit rather than inferred later: `directionAlignedTrendEfficiency20` is positive when the hypothesis direction agrees with the point-in-time trend and negative when it opposes it. `directionAlignedRangeLocation20` describes whether price's recent-range location supports that direction. Missing or incomplete history sets `context.availability.canonical.trend20` to zero and omits every trend measurement rather than inventing a neutral value.
+
+The first real integration build is MES pullback actionability dataset `ARDS-122034E0C4DA508A398D105198EE8EB2`, version `actionability-outcome-dataset-1.7.0`. It contains 25,776 finalized scenario examples: 18,676 train, 4,000 validation, and 3,100 test. All 11 `context.trend.*` measurements are present in every example. This dataset is research-only; coverage proves feature availability, not predictive or economic value.
 
 Eligible examples expose historical sample count, mean and mean-absolute return fraction, positive-close rate, directional bias, and current range/volume relative to the same-clock baseline. The same implementation feeds both universal outcome examples and actionability examples. An indexed `(instrument, timeframe, minute-of-day, close-time)` lookup keeps the point-in-time query bounded.
 

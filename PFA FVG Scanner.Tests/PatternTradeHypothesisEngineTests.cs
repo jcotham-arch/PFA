@@ -196,6 +196,7 @@ public sealed class PatternTradeHypothesisEngineTests
         Assert.Contains("netR",dataset.LabelNames);Assert.Contains("maximumFavorableExcursionR",dataset.LabelNames);
         Assert.Contains("context.availability.canonical.latestBar",dataset.FeatureNames);
         Assert.Contains("context.availability.canonical.context20",dataset.FeatureNames);
+        Assert.Contains("context.availability.canonical.trend20",dataset.FeatureNames);
         Assert.Contains("context.availability.external.orderFlow",dataset.FeatureNames);
         Assert.Contains("context.availability.external.levelTwo",dataset.FeatureNames);
         Assert.True(dataset.ExampleCount>=3);Assert.Equal(0,dataset.TargetHorizonMinutes);
