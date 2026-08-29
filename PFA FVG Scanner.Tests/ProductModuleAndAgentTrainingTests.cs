@@ -95,8 +95,8 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.Equal(new[]{"Train","Validation","Test"},baseline.Metrics.Select(x=>x.Split));
         Assert.Equal(4,baseline.SegmentMetrics!.Count);
         Assert.All(baseline.SegmentMetrics,metric=>Assert.True(metric.SampleCount>0));
-        Assert.Equal(14,baseline.VariantMetrics!.Count);
-        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-linear","boosted-stumps"},
+        Assert.Equal(18,baseline.VariantMetrics!.Count);
+        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-base-only","ridge-context-only","ridge-linear","boosted-stumps"},
             baseline.VariantMetrics.Select(x=>x.Variant).Distinct());
         Assert.Equal(3,baseline.WalkForwardMetrics!.Count);
         Assert.All(baseline.WalkForwardMetrics,metric=>
