@@ -8,15 +8,15 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-2.0.0";
+    public const string Version = "research-promotion-gate-2.2.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(request.DatasetId)) throw new ArgumentException("DatasetId is required.");
-        if (request.TargetName != "directionalCloseTicks")
-            throw new ArgumentException("The initial baseline supports directionalCloseTicks only.");
+        if (request.TargetName is not ("directionalCloseTicks" or "netR"))
+            throw new ArgumentException("The baseline supports directionalCloseTicks and finalized netR targets only.");
         var (datasetHash, rows) = await ReadAsync(request.DatasetId.Trim(), request.TargetName, token);
         var training = rows.Where(x => x.Split == "Train").ToArray();
         if (training.Length == 0) throw new InvalidOperationException("The dataset has no training examples.");
@@ -65,7 +65,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             ("ridge-base-only",ridgeBase.Predict),
             ("ridge-context-only",ridgeContext.Predict),
             ("ridge-linear", ridge.Predict),
-            ("boosted-stumps", boostedStumps.Predict)
+            ("boosted-stumps-capped", boostedStumps.Predict)
         };
         var variantMetrics = variants.SelectMany(variant => new[] { "Validation", "Test" }.Select(split =>
         {
@@ -73,6 +73,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             return new AgentBaselineVariantMetric(variant.Name, split, metric.SampleCount, metric.MeanAbsoluteError,
                 metric.RootMeanSquaredError, metric.DirectionalAccuracy);
         })).ToArray();
+        var economicPolicyMetrics=request.TargetName=="netR"?variants.SelectMany(variant=>new[]{"Validation","Test"}.Select(split=>
+            EconomicPolicy(variant.Name,split,rows.Where(x=>x.Split==split).ToArray(),variant.Predict))).ToArray():[];
         var contextAblations=rows.Select(x=>x.ModuleId).Distinct(StringComparer.Ordinal).Order()
             .Select(module=>
             {
@@ -96,17 +98,18 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
                     familyMetric.DirectionalAccuracy,Round(familyMetric.DirectionalAccuracy-baseMetric.DirectionalAccuracy));
             })).ToArray();
         var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
-        var promotionGate = BuildPromotionGate(variantMetrics, segmentMetrics, walkForwardMetrics);
+        var promotionGate = BuildPromotionGate(request.TargetName,variantMetrics, segmentMetrics, walkForwardMetrics,economicPolicyMetrics);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
             Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
             VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate,
-            ContextAblations=contextAblations,ContextFamilyAblations=contextFamilyAblations });
+            ContextAblations=contextAblations,ContextFamilyAblations=contextFamilyAblations,
+            EconomicPolicyMetrics=economicPolicyMetrics });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
             SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics,
             PromotionGate:promotionGate,ContextAblations:contextAblations,
-            ContextFamilyAblations:contextFamilyAblations);
+            ContextFamilyAblations:contextFamilyAblations,EconomicPolicyMetrics:economicPolicyMetrics);
         await PersistAsync(run, token);
         return run;
     }
@@ -218,6 +221,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
 
     private static BoostedStumpModel FitBoostedStumps(IReadOnlyList<Row> training,int iterations,decimal learningRate)
     {
+        if(training.Count>25000)training=Enumerable.Range(0,25000)
+            .Select(index=>training[(int)((long)index*training.Count/25000)]).ToArray();
         var names=training.SelectMany(x=>x.Features.Keys).Distinct(StringComparer.Ordinal).Order().ToArray();
         var thresholds=names.ToDictionary(name=>name,name=>
         {
@@ -247,11 +252,12 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         return new(initial,stumps);
     }
 
-    private static AgentResearchPromotionGate BuildPromotionGate(
+    private static AgentResearchPromotionGate BuildPromotionGate(string target,
         IReadOnlyList<AgentBaselineVariantMetric> variants,IReadOnlyList<AgentBaselineSegmentMetric> segments,
-        IReadOnlyList<AgentWalkForwardMetric> folds)
+        IReadOnlyList<AgentWalkForwardMetric> folds,IReadOnlyList<AgentEconomicPolicyMetric> economic)
     {
-        var candidates=new[]{"instrument-module-direction-mean","ridge-linear","boosted-stumps"};
+        var candidates=new[]{"instrument-module-direction-mean","ridge-linear","boosted-stumps-capped"};
+        if(target=="netR")return BuildEconomicPromotionGate(variants,segments,economic,candidates);
         var candidate=variants.Where(x=>x.Split=="Validation"&&candidates.Contains(x.Variant,StringComparer.Ordinal))
             .OrderBy(x=>x.MeanAbsoluteError).ThenByDescending(x=>x.DirectionalAccuracy).First();
         var test=variants.Single(x=>x.Variant==candidate.Variant&&x.Split=="Test");
@@ -267,6 +273,32 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         if(!coverage)reasons.Add("At least one instrument has fewer than 50 untouched test examples.");
         return new(candidate.Variant,reasons.Count==0?"EligibleForResearchReview":"Rejected",beatsMae,
             beatsDirection,stable,coverage,reasons);
+    }
+
+    private static AgentResearchPromotionGate BuildEconomicPromotionGate(IReadOnlyList<AgentBaselineVariantMetric> variants,
+        IReadOnlyList<AgentBaselineSegmentMetric> segments,IReadOnlyList<AgentEconomicPolicyMetric> economic,string[] candidates)
+    {
+        var validation=economic.Where(x=>x.Split=="Validation"&&candidates.Contains(x.Variant,StringComparer.Ordinal)&&x.SelectedSamples>=100)
+            .OrderByDescending(x=>x.MeanNetR).ThenByDescending(x=>x.ProfitFactor).FirstOrDefault();
+        var candidate=validation?.Variant??"ridge-linear";var test=economic.Single(x=>x.Variant==candidate&&x.Split=="Test");
+        var candidateTest=variants.Single(x=>x.Variant==candidate&&x.Split=="Test");var global=variants.Single(x=>x.Variant=="global-mean"&&x.Split=="Test");
+        var reasons=new List<string>();if(validation is null||validation.MeanNetR<=0)reasons.Add("No validation-selected policy has positive net-R expectancy with at least 100 trades.");
+        if(test.SelectedSamples<100)reasons.Add("The predicted-positive untouched test policy has fewer than 100 trades.");
+        if(test.MeanNetR<=0)reasons.Add("Predicted-positive untouched test trades have non-positive expectancy.");
+        if(test.ProfitFactor<=1)reasons.Add("Predicted-positive untouched test trades have profit factor at or below 1.0.");
+        reasons.Add("Economic walk-forward stability has not yet been established for the selected policy.");
+        var coverage=segments.Where(x=>x.Split=="Test").All(x=>x.SampleCount>=50);
+        return new(candidate,reasons.Count==0?"EligibleForResearchReview":"Rejected",candidateTest.MeanAbsoluteError<global.MeanAbsoluteError,
+            false,false,coverage,reasons);
+    }
+
+    private static AgentEconomicPolicyMetric EconomicPolicy(string variant,string split,IReadOnlyList<Row> rows,Func<Row,decimal> predictor)
+    {
+        var selected=rows.Where(x=>predictor(x)>0).Select(x=>x.Actual).ToArray();if(selected.Length==0)return new(variant,split,0,0,0,0,0);
+        var grossWins=selected.Where(x=>x>0).Sum();var grossLoss=Math.Abs(selected.Where(x=>x<0).Sum());decimal equity=0,peak=0,drawdown=0;
+        foreach(var result in selected){equity+=result;peak=Math.Max(peak,equity);drawdown=Math.Max(drawdown,peak-equity);}
+        return new(variant,split,selected.Length,Round(selected.Average()),Round(selected.Count(x=>x>0)/(decimal)selected.Length),
+            grossLoss==0?decimal.MaxValue:Round(grossWins/grossLoss),Round(drawdown));
     }
 
     private static IReadOnlyList<AgentWalkForwardMetric> BuildWalkForwardMetrics(IReadOnlyList<Row> rows,int embargoMinutes)

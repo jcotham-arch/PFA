@@ -45,3 +45,5 @@ async function hydrate(){
   }
 }
 hydrate().catch(error=>{document.getElementById('moduleCatalog').innerHTML=`<p>${esc(error.message)}</p>`});
+async function hydrateEconomicPolicies(){try{const response=await fetch('/api/agent/baseline-runs');if(!response.ok)return;const runs=await response.json();const run=runs.find(x=>x.targetName==='netR'&&x.economicPolicyMetrics?.length);if(!run)return;document.getElementById('economicPolicyMetrics').innerHTML=run.economicPolicyMetrics.map(x=>`<tr><td>${esc(x.variant)}</td><td>${esc(x.split)}</td><td>${number(x.selectedSamples)}</td><td>${Number(x.meanNetR).toFixed(3)}R</td><td>${(Number(x.winRate)*100).toFixed(1)}%</td><td>${Number(x.profitFactor).toFixed(2)}</td><td>${Number(x.maximumDrawdownR).toFixed(1)}R</td></tr>`).join('')}catch{}}
+hydrateEconomicPolicies();

@@ -152,6 +152,11 @@ public sealed class PatternTradeHypothesisEngineTests
         Assert.Equal(2,run.Summaries.Where(x=>x.Split=="Validation").Sum(x=>x.Samples));
         Assert.Equal(4,run.Summaries.Where(x=>x.Split=="Test").Sum(x=>x.Samples));
         Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
+        var dataset=await new ActionabilityOutcomeDatasetService(factory.Database).BuildAsync(
+            new(Now.AddHours(4),["MES"],["liquidity-sweep"]),TestContext.Current.CancellationToken);
+        Assert.Equal(ActionabilityOutcomeDatasetService.Version,dataset.DatasetVersion);
+        Assert.Contains("netR",dataset.LabelNames);Assert.Contains("maximumFavorableExcursionR",dataset.LabelNames);
+        Assert.True(dataset.ExampleCount>=3);Assert.Equal(0,dataset.TargetHorizonMinutes);
     }
 
     private static PatternTradeHypothesisDefinition Definition(string module)=>new($"test-{module}","1",module,

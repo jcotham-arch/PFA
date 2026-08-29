@@ -35,6 +35,9 @@ public sealed class AgentTrainingDatasetBuilder
 public sealed record GenericOutcomeDatasetRequest(DateTime AsOfUtc, int TargetHorizonMinutes = 15,
     IReadOnlyList<string>? InstrumentIds = null);
 
+public sealed record ActionabilityOutcomeDatasetRequest(DateTime AsOfUtc,
+    IReadOnlyList<string>? InstrumentIds=null,IReadOnlyList<string>? ModuleIds=null);
+
 public sealed record GenericOutcomeResearchExample(
     string ExampleId,string ObservationId,string OutcomeId,string InstrumentId,string? ContractId,
     string Timeframe,string ModuleId,string PatternType,string Direction,DateTime EventTimeUtc,
@@ -71,6 +74,9 @@ public sealed record AgentContextFamilyAblationMetric(string ModuleId,string Fam
     decimal BaseMeanAbsoluteError,decimal WithFamilyMeanAbsoluteError,decimal BaseDirectionalAccuracy,
     decimal WithFamilyDirectionalAccuracy,decimal AccuracyLiftOverBase);
 
+public sealed record AgentEconomicPolicyMetric(string Variant,string Split,int SelectedSamples,
+    decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR);
+
 public sealed record AgentWalkForwardMetric(int Fold,int EmbargoMinutes,int TrainingSamples,
     int ValidationSamples,DateTime ValidationStartUtc,DateTime ValidationEndUtc,
     decimal MeanAbsoluteError,decimal RootMeanSquaredError,decimal DirectionalAccuracy);
@@ -87,4 +93,5 @@ public sealed record AgentBaselineRun(string RunId,string ModelVersion,string Da
     IReadOnlyList<AgentWalkForwardMetric>? WalkForwardMetrics=null,
     AgentResearchPromotionGate? PromotionGate=null,
     IReadOnlyList<AgentContextAblationMetric>? ContextAblations=null,
-    IReadOnlyList<AgentContextFamilyAblationMetric>? ContextFamilyAblations=null);
+    IReadOnlyList<AgentContextFamilyAblationMetric>? ContextFamilyAblations=null,
+    IReadOnlyList<AgentEconomicPolicyMetric>? EconomicPolicyMetrics=null);

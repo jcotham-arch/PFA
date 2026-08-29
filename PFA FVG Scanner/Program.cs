@@ -128,6 +128,7 @@ builder.Services.AddSingleton<ProductModuleCatalog>();
 builder.Services.AddSingleton<ModuleEntitlementEvaluator>();
 builder.Services.AddSingleton<AgentTrainingDatasetBuilder>();
 builder.Services.AddSingleton<GenericOutcomeDatasetService>();
+builder.Services.AddSingleton<ActionabilityOutcomeDatasetService>();
 builder.Services.AddSingleton<AgentBaselineTrainingService>();
 builder.Services.AddSingleton<AgentTrainingReadinessService>();
 builder.Services.AddSingleton<PatternTradeResearchService>();
