@@ -2,7 +2,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public static class ActionabilityContextBucketEncoder
 {
-    public const string Version="actionability-context-buckets-1.0.0";
+    public const string Version="actionability-context-buckets-1.1.0";
 
     public static IReadOnlyList<string> Encode(IReadOnlyDictionary<string,decimal> features)
     {
@@ -23,6 +23,17 @@ public static class ActionabilityContextBucketEncoder
 
         foreach(var feature in features.Where(x=>x.Key.StartsWith("context.interaction.",StringComparison.Ordinal)&&x.Value==1))
             buckets.Add($"active-interaction:{feature.Key["context.interaction.".Length..]}");
+        if(features.GetValueOrDefault("context.availability.canonical.crossMarket")==1&&
+           features.TryGetValue("context.crossMarket.directionalBreadth",out var breadth))
+        {
+            var breadthState=breadth>.2m?"positive":breadth<-.2m?"negative":"mixed";
+            buckets.Add($"cross-market-breadth:{breadthState}");
+            if(features.TryGetValue("direction",out var direction))
+            {
+                var alignment=Math.Sign(direction)*breadth;
+                buckets.Add($"cross-market-pattern:{(alignment>.2m?"aligned":alignment<-.2m?"opposed":"mixed")}");
+            }
+        }
         return buckets.Order(StringComparer.Ordinal).ToArray();
     }
 
