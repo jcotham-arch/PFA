@@ -112,6 +112,7 @@ builder.Services.AddSingleton<ActionabilityEvidenceService>();
 builder.Services.AddSingleton<PFA_FVG_Scanner.Domain.Context.IResearchContextFamilyRegistry,
     PFA_FVG_Scanner.Domain.Context.ResearchContextFamilyRegistry>();
 builder.Services.AddSingleton<PFA_FVG_Scanner.Domain.Context.BarDerivedResearchContextEngine>();
+builder.Services.AddSingleton<PFA_FVG_Scanner.Domain.Research.PositionSizingResearchEngine>();
 builder.Services.AddSingleton<IMarketSequenceDefinitionRegistry, MarketSequenceDefinitionRegistry>();
 builder.Services.AddSingleton<IMarketSequenceEngine, MarketSequenceEngine>();
 builder.Services.AddSingleton<PatternSequenceReplayService>();
