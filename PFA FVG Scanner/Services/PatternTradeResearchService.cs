@@ -25,19 +25,25 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         var targetRs=(request.TargetRs??[1m,2m,3m]).Distinct().Order().ToArray();
         var holds=(request.MaximumHoldingMinutes??[15,30,60]).Distinct().Order().ToArray();
         var requestedStops=request.StopPolicies?.Select(Normalize).Distinct().Order().ToArray();
+        var entryPolicies=(request.EntryPolicies??["next-one-minute-open","one-minute-confirmation-close"]).Select(Normalize).Distinct().Order().ToArray();
         var exitPolicies=(request.ExitPolicies??["fixed-target-or-time","break-even-after-0.5r"]).Select(Normalize).Distinct().Order().ToArray();
+        if(entryPolicies.Length==0||entryPolicies.Any(x=>x is not("next-one-minute-open" or "one-minute-confirmation-close" or "directional-confirmation-close" or "two-bar-confirmation-close")))
+            throw new ArgumentException("Unknown entry policy.");
         if(requestedStops?.Any(x=>x is not("extreme-invalidation" or "boundary-invalidation" or "opposite-range-invalidation"))==true)
             throw new ArgumentException("Unknown stop policy.");
-        if(exitPolicies.Length==0||exitPolicies.Any(x=>x is not("fixed-target-or-time" or "break-even-after-0.5r")))
+        if(exitPolicies.Length==0||exitPolicies.Any(x=>x is not("fixed-target-or-time" or "break-even-after-0.5r" or "break-even-after-1r" or "trail-half-r-after-1r" or "opposite-bar-close")))
             throw new ArgumentException("Unknown exit policy.");
         if(targetRs.Any(x=>x<=0)||holds.Any(x=>x<1)||request.StopBufferTicks<0||request.EstimatedRoundTripCostTicks<0)
             throw new ArgumentException("Targets and holding periods must be positive; costs and buffers cannot be negative.");
+        if(request.MaximumScenarioEvaluations<1)throw new ArgumentException("MaximumScenarioEvaluations must be positive.");
         var observations=await ReadObservationsAsync(asOf,roots,modules,token);
         if(observations.Count==0)throw new InvalidOperationException("No eligible non-FVG observations were found.");
         var splitObservations=AssignSplits(observations);
         var bars=await ReadBarsAsync(splitObservations.Select(x=>x.Observation.InstrumentId).Distinct().ToArray(),
             splitObservations.Min(x=>x.Observation.KnownAtUtc).AddMinutes(-1),asOf,token);
-        var definitions=Definitions(modules,targetRs,holds,request.StopBufferTicks,request.EstimatedRoundTripCostTicks,requestedStops,exitPolicies);
+        var definitions=Definitions(modules,targetRs,holds,request.StopBufferTicks,request.EstimatedRoundTripCostTicks,requestedStops,entryPolicies,exitPolicies);
+        var estimated=(long)definitions.Count*splitObservations.Count;if(estimated>request.MaximumScenarioEvaluations)
+            throw new InvalidOperationException($"The requested grid would evaluate {estimated:N0} scenarios, above the {request.MaximumScenarioEvaluations:N0} safety cap. Narrow the instruments, modules, entries, exits, targets, or holding periods.");
         var samples=new List<PatternTradeHypothesisSample>();var maxHold=holds.Max();
         foreach(var item in splitObservations)
         {
@@ -48,7 +54,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
                 samples.Add(PatternTradeHypothesisEngine.Evaluate(hypothesis,observation,window,definition.TickSize) with{Split=item.Split});
         }
         var summaries=Summarize(definitions,samples);var seed=JsonSerializer.Serialize(new
-        {PatternTradeHypothesisEngine.Version,asOf,roots,modules,targetRs,holds,exitPolicies,request.StopBufferTicks,
+        {PatternTradeHypothesisEngine.Version,asOf,roots,modules,targetRs,holds,entryPolicies,exitPolicies,request.StopBufferTicks,request.MaximumScenarioEvaluations,
             request.EstimatedRoundTripCostTicks,Samples=samples.Select(x=>x.ContentHash),summaries});
         var hash=AgentTrainingDatasetBuilder.Hash(seed);var run=new PatternTradeResearchRun($"PTR-{hash[..32]}",
             PatternTradeHypothesisEngine.Version,asOf,splitObservations.Select(x=>x.Observation.InstrumentId).Distinct().Order().ToArray(),
@@ -118,13 +124,13 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
     private static IReadOnlyList<CanonicalBar> Window(CanonicalBar[] bars,DateTime decision,int maxHold)
     {var start=Array.FindIndex(bars,x=>x.CloseTimeUtc>decision);if(start<0)return[];var end=start;var cutoff=decision.AddMinutes(maxHold+2);while(end<bars.Length&&bars[end].OpenTimeUtc<cutoff)end++;return bars[start..end];}
 
-    private static List<PatternTradeHypothesisDefinition> Definitions(string[] modules,decimal[] targets,int[] holds,decimal buffer,decimal costs,string[]? requestedStops,string[] exitPolicies)
+    private static List<PatternTradeHypothesisDefinition> Definitions(string[] modules,decimal[] targets,int[] holds,decimal buffer,decimal costs,string[]? requestedStops,string[] entryPolicies,string[] exitPolicies)
     {
         var values=new List<PatternTradeHypothesisDefinition>();foreach(var module in modules)
         {
             var policies=module=="failed-breakout"?new[]{HypothesisDirectionPolicy.PatternDirection,HypothesisDirectionPolicy.OpposePatternDirection}:
                 new[]{HypothesisDirectionPolicy.PatternDirection};
-            foreach(var policy in policies)foreach(var entry in new[]{"next-one-minute-open","one-minute-confirmation-close"})
+            foreach(var policy in policies)foreach(var entry in entryPolicies)
             foreach(var stop in requestedStops??Stops(module,policy))foreach(var exit in exitPolicies)foreach(var target in targets)foreach(var hold in holds)
             {var signature=$"{module}|{policy}|{entry}|{stop}|{exit}|{target:G29}|{hold}|{buffer:G29}|{costs:G29}";var hash=AgentTrainingDatasetBuilder.Hash(signature);
                 values.Add(new($"PTH-{hash[..24]}","1.3.0",module,policy,entry,stop,target,hold,buffer,costs,exit));}
@@ -157,8 +163,17 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         await using var connection=database.CreateConnection();await connection.OpenAsync(token);await using var transaction=(SqliteTransaction)await connection.BeginTransactionAsync(token);
         await using(var command=connection.CreateCommand()){command.Transaction=transaction;command.CommandText="INSERT OR IGNORE INTO PatternTradeResearchRuns(RunId,EngineVersion,AsOfUtc,ObservationCount,HypothesisCount,SampleCount,ContentHash,RunJson,CreatedAtUtc,CanActivateStrategy,CanRouteToRealBroker) VALUES($id,$version,$asOf,$observations,$hypotheses,$samples,$hash,$json,$created,0,0)";
             Add(command,"$id",run.RunId);Add(command,"$version",run.EngineVersion);Add(command,"$asOf",run.AsOfUtc.ToString("O"));Add(command,"$observations",run.ObservationCount);Add(command,"$hypotheses",run.HypothesisCount);Add(command,"$samples",run.SampleCount);Add(command,"$hash",run.ContentHash);Add(command,"$json",JsonSerializer.Serialize(run));Add(command,"$created",run.CreatedAtUtc.ToString("O"));await command.ExecuteNonQueryAsync(token);}
-        foreach(var sample in samples){await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="INSERT OR IGNORE INTO PatternTradeResearchSamples(RunId,SampleId,HypothesisId,ObservationId,InstrumentId,ModuleId,Split,Outcome,NetR,ContentHash,SampleJson) VALUES($run,$sample,$hypothesis,$observation,$instrument,$module,$split,$outcome,$net,$hash,$json)";
-            Add(command,"$run",run.RunId);Add(command,"$sample",sample.SampleId);Add(command,"$hypothesis",sample.HypothesisId);Add(command,"$observation",sample.ObservationId);Add(command,"$instrument",sample.InstrumentId);Add(command,"$module",sample.ModuleId);Add(command,"$split",sample.Split);Add(command,"$outcome",sample.Outcome.ToString());Add(command,"$net",sample.NetR);Add(command,"$hash",sample.ContentHash);Add(command,"$json",JsonSerializer.Serialize(sample));await command.ExecuteNonQueryAsync(token);}
+        await using(var command=connection.CreateCommand()){command.Transaction=transaction;command.CommandText="INSERT OR IGNORE INTO PatternTradeResearchSamples(RunId,SampleId,HypothesisId,ObservationId,InstrumentId,ModuleId,Split,Outcome,NetR,ContentHash,SampleJson) VALUES($run,$sample,$hypothesis,$observation,$instrument,$module,$split,$outcome,$net,$hash,$json)";
+            var runParameter=command.Parameters.Add("$run",SqliteType.Text);var sampleParameter=command.Parameters.Add("$sample",SqliteType.Text);
+            var hypothesisParameter=command.Parameters.Add("$hypothesis",SqliteType.Text);var observationParameter=command.Parameters.Add("$observation",SqliteType.Text);
+            var instrumentParameter=command.Parameters.Add("$instrument",SqliteType.Text);var moduleParameter=command.Parameters.Add("$module",SqliteType.Text);
+            var splitParameter=command.Parameters.Add("$split",SqliteType.Text);var outcomeParameter=command.Parameters.Add("$outcome",SqliteType.Text);
+            var netParameter=command.Parameters.Add("$net",SqliteType.Text);var hashParameter=command.Parameters.Add("$hash",SqliteType.Text);
+            var jsonParameter=command.Parameters.Add("$json",SqliteType.Text);command.Prepare();
+            foreach(var sample in samples){runParameter.Value=run.RunId;sampleParameter.Value=sample.SampleId;hypothesisParameter.Value=sample.HypothesisId;
+                observationParameter.Value=sample.ObservationId;instrumentParameter.Value=sample.InstrumentId;moduleParameter.Value=sample.ModuleId;
+                splitParameter.Value=sample.Split;outcomeParameter.Value=sample.Outcome.ToString();netParameter.Value=(object?)sample.NetR??DBNull.Value;
+                hashParameter.Value=sample.ContentHash;jsonParameter.Value=JsonSerializer.Serialize(sample);await command.ExecuteNonQueryAsync(token);}}
         await transaction.CommitAsync(token);
     }
 

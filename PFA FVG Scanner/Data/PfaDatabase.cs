@@ -24,7 +24,7 @@ namespace PFA_FVG_Scanner.Data
                     "pfa-market-data.db");
 
             _connectionString =
-                $"Data Source={DatabasePath}";
+                $"Data Source={DatabasePath};Cache=Shared;Default Timeout=30;Pooling=True";
         }
 
         public async Task InitializeAsync()
@@ -33,6 +33,8 @@ namespace PFA_FVG_Scanner.Data
                 new(_connectionString);
 
             await connection.OpenAsync();
+
+            await ConfigureConcurrencyAsync(connection);
 
             await CreateRawMarketEventsTableAsync(connection);
             await CreateCandlesTableAsync(connection);
@@ -71,6 +73,15 @@ namespace PFA_FVG_Scanner.Data
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task ConfigureConcurrencyAsync(SqliteConnection connection)
+        {
+            await using var command=connection.CreateCommand();command.CommandText="""
+                PRAGMA journal_mode=WAL;
+                PRAGMA synchronous=NORMAL;
+                PRAGMA busy_timeout=30000;
+                """;await command.ExecuteNonQueryAsync();
         }
 
         private static async Task CreatePatternTradeResearchTablesAsync(SqliteConnection connection)

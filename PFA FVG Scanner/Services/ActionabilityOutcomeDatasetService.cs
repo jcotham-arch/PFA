@@ -15,9 +15,11 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
         CancellationToken token=default)
     {
         var asOf=Utc(request.AsOfUtc);if(asOf==default)throw new ArgumentException("A non-default AsOfUtc is required.");
+        if(request.MaximumExamples<3)throw new ArgumentException("MaximumExamples must be at least three.");
         var instruments=Normalize(request.InstrumentIds,true);var modules=Normalize(request.ModuleIds,false);
         await using var connection=database.CreateConnection();await connection.OpenAsync(token);
-        var run=await LatestRun(connection,token)??throw new InvalidOperationException("No pattern trade research run exists.");
+        var run=await LatestRun(connection,request.PatternTradeRunId,token)??throw new InvalidOperationException("The requested pattern trade research run does not exist.");
+        if(run.SampleCount>request.MaximumExamples)throw new InvalidOperationException($"Pattern run {run.RunId} contains {run.SampleCount:N0} samples, above the {request.MaximumExamples:N0} dataset-build cap. Select a narrower run or explicitly raise the cap after reviewing storage and training cost.");
         var definitions=run.Summaries.GroupBy(x=>x.HypothesisId,StringComparer.Ordinal)
             .ToDictionary(x=>x.Key,x=>x.First(),StringComparer.Ordinal);
         var examples=await ReadExamples(connection,run,definitions,asOf,instruments,modules,token);
@@ -34,8 +36,8 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
         await Persist(connection,manifest,ordered,token);return manifest;
     }
 
-    private static async Task<PatternTradeResearchRun?> LatestRun(SqliteConnection connection,CancellationToken token)
-    {await using var command=connection.CreateCommand();command.CommandText="SELECT RunJson FROM PatternTradeResearchRuns ORDER BY CreatedAtUtc DESC LIMIT 1";var json=await command.ExecuteScalarAsync(token) as string;return json is null?null:JsonSerializer.Deserialize<PatternTradeResearchRun>(json);}
+    private static async Task<PatternTradeResearchRun?> LatestRun(SqliteConnection connection,string? runId,CancellationToken token)
+    {await using var command=connection.CreateCommand();command.CommandText=string.IsNullOrWhiteSpace(runId)?"SELECT RunJson FROM PatternTradeResearchRuns ORDER BY CreatedAtUtc DESC LIMIT 1":"SELECT RunJson FROM PatternTradeResearchRuns WHERE RunId=$id";if(!string.IsNullOrWhiteSpace(runId))command.Parameters.AddWithValue("$id",runId.Trim());var json=await command.ExecuteScalarAsync(token) as string;return json is null?null:JsonSerializer.Deserialize<PatternTradeResearchRun>(json);}
 
     private static async Task<List<GenericOutcomeResearchExample>> ReadExamples(SqliteConnection connection,
         PatternTradeResearchRun run,IReadOnlyDictionary<string,PatternTradeHypothesisSummary> definitions,DateTime asOf,

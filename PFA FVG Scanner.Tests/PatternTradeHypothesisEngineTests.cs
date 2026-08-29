@@ -43,6 +43,26 @@ public sealed class PatternTradeHypothesisEngineTests
     }
 
     [Fact]
+    public void DirectionalConfirmationRequiresAlignedCloseLocation()
+    {
+        var definition=Definition("liquidity-sweep") with{EntryPolicy="directional-confirmation-close"};
+        var rejected=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),[Bar(0,100,101,99,99.5m)],.25m);
+        Assert.Equal(HypothesisExitOutcome.NoEntry,rejected.Outcome);Assert.Null(rejected.EntryTimeUtc);
+        var accepted=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,101,99.75m,100.9m),Bar(1,100.9m,102.5m,100.75m,102)],.25m);
+        Assert.Equal(Now.AddMinutes(1),accepted.EntryTimeUtc);Assert.Equal(100.9m,accepted.EntryPrice);
+    }
+
+    [Fact]
+    public void TwoBarConfirmationWaitsForTwoKnownProgressingCloses()
+    {
+        var definition=Definition("liquidity-sweep") with{EntryPolicy="two-bar-confirmation-close"};
+        var accepted=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,101,99.75m,100.8m),Bar(1,100.8m,102,100.5m,101.8m),Bar(2,101.8m,104,101.5m,103)],.25m);
+        Assert.Equal(Now.AddMinutes(2),accepted.EntryTimeUtc);Assert.Equal(101.8m,accepted.EntryPrice);
+    }
+
+    [Fact]
     public void FailedBreakoutCanTestOpposingReversalWithoutChangingPatternFact()
     {
         var observation=Sweep() with{ModuleId="failed-breakout",PatternType="FailedBreakout",
@@ -104,6 +124,16 @@ public sealed class PatternTradeHypothesisEngineTests
     }
 
     [Fact]
+    public void OneRTrailingPolicyLocksHalfROnlyAfterActivationBarCompletes()
+    {
+        var definition=Definition("liquidity-sweep") with{TargetR=3m,ExitPolicy="trail-half-r-after-1r"};
+        var result=PatternTradeHypothesisEngine.Evaluate(definition,Sweep(),
+            [Bar(0,100,101.5m,99.5m,101),Bar(1,101,101.25m,100.5m,100.75m)],.25m);
+        Assert.Equal(HypothesisExitOutcome.BreakEven,result.Outcome);
+        Assert.Equal(100.625m,result.ExitPrice);Assert.Equal(.5m,result.GrossR);
+    }
+
+    [Fact]
     public void UnknownExitPolicyIsRejected()
     {
         var definition=Definition("liquidity-sweep") with{ExitPolicy="clairvoyant-exit"};
@@ -145,6 +175,10 @@ public sealed class PatternTradeHypothesisEngineTests
             command.Parameters.AddWithValue("$closeTime",known.AddMinutes(1).ToString("O"));await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
         var service=new PatternTradeResearchService(factory.Database,new InstrumentDefinitionRegistry());
+        var capError=await Assert.ThrowsAsync<InvalidOperationException>(()=>service.RunAsync(new(
+            Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1,["extreme-invalidation"],
+            ["fixed-target-or-time"],MaximumScenarioEvaluations:1),TestContext.Current.CancellationToken));
+        Assert.Contains("safety cap",capError.Message);
         var run=await service.RunAsync(new(Now.AddHours(4),["MES"],["liquidity-sweep"],[1],[15],1,1,
             ["extreme-invalidation"],["fixed-target-or-time"]),TestContext.Current.CancellationToken);
         Assert.Equal(10,run.ObservationCount);Assert.Equal(20,run.SampleCount);Assert.Equal(2,run.HypothesisCount);
@@ -152,7 +186,11 @@ public sealed class PatternTradeHypothesisEngineTests
         Assert.Equal(2,run.Summaries.Where(x=>x.Split=="Validation").Sum(x=>x.Samples));
         Assert.Equal(4,run.Summaries.Where(x=>x.Split=="Test").Sum(x=>x.Samples));
         Assert.Single(await service.GetAllAsync(TestContext.Current.CancellationToken));
-        var dataset=await new ActionabilityOutcomeDatasetService(factory.Database).BuildAsync(
+        var datasetService=new ActionabilityOutcomeDatasetService(factory.Database);
+        var datasetCap=await Assert.ThrowsAsync<InvalidOperationException>(()=>datasetService.BuildAsync(
+            new(Now.AddHours(4),["MES"],["liquidity-sweep"],run.RunId,3),TestContext.Current.CancellationToken));
+        Assert.Contains("dataset-build cap",datasetCap.Message);
+        var dataset=await datasetService.BuildAsync(
             new(Now.AddHours(4),["MES"],["liquidity-sweep"]),TestContext.Current.CancellationToken);
         Assert.Equal(ActionabilityOutcomeDatasetService.Version,dataset.DatasetVersion);
         Assert.Contains("netR",dataset.LabelNames);Assert.Contains("maximumFavorableExcursionR",dataset.LabelNames);

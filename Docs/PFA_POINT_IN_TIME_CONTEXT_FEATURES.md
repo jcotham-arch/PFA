@@ -46,3 +46,11 @@ Report `ASR-75DD88CA05C4F754E38E0F38FD6E8160` evaluated 1,011 segments with at l
 Baseline run `ABR-83149016A3560F50E913F4001817D434` freezes four 25-stump ensembles: a global control plus separate failed-breakout, liquidity-sweep, and range-breakout artifacts. The module-specific scoring path resolves the applicable artifact from the point-in-time `context.module.*` feature and remains research-only with no activation or broker-routing authority.
 
 Neither the global nor module-specific nonlinear ensemble predicted any positive-expectancy scenarios in validation or untouched test. The structural ridge control remained the least-negative selectable model at -0.041838 mean net R and 0.773543 profit factor on 735 test scenarios. The combined ridge remained worse at -0.093671R and 0.516308 profit factor. This rejects shallow nonlinear rescue of the current policy labels; it does not prove that every possible entry/exit formulation is untradeable.
+
+## Expanded policy-label campaign
+
+Pattern run `PTR-06782AC8F111471E6BDC797B07D02814` tested true directional-close confirmation, two-bar progressing confirmation, break-even after 1R, a half-R trailing lock after 1R, and opposite-bar-close exits across 0.5R, 0.75R, 1R, and 1.5R targets and 5, 10, and 15 minute holding windows. The engine evaluated 576 hypotheses against 19,948 observations, retaining 3,523,104 samples including no-entry and ambiguous cases. Zero hypotheses achieved positive expectancy and profit factor above 1.0 in both training and validation, so no test-qualified policy or downstream agent-dataset rebuild was authorized.
+
+The campaign exposed a scale constraint as well as a market result. Future requests now have a five-million-scenario preflight cap, and immutable sample writes reuse a prepared command inside one transaction. The completed 3.5-million-sample run remains preserved; the safety change prevents accidental combinatorial grids from expanding without an explicit narrower design.
+
+The actionability dataset builder now also accepts an explicit pattern-run ID and defaults to a 500,000-source-sample cap. This prevents the latest broad exploratory campaign from silently replacing the narrower frozen training corpus. A larger run can still be selected intentionally by raising the cap after its storage and training cost is reviewed.

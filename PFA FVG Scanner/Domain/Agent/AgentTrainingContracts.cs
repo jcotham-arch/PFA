@@ -36,7 +36,8 @@ public sealed record GenericOutcomeDatasetRequest(DateTime AsOfUtc, int TargetHo
     IReadOnlyList<string>? InstrumentIds = null);
 
 public sealed record ActionabilityOutcomeDatasetRequest(DateTime AsOfUtc,
-    IReadOnlyList<string>? InstrumentIds=null,IReadOnlyList<string>? ModuleIds=null);
+    IReadOnlyList<string>? InstrumentIds=null,IReadOnlyList<string>? ModuleIds=null,
+    string? PatternTradeRunId=null,int MaximumExamples=500_000);
 
 public sealed record GenericOutcomeResearchExample(
     string ExampleId,string ObservationId,string OutcomeId,string InstrumentId,string? ContractId,
