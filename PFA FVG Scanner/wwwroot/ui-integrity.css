@@ -1,0 +1,8 @@
+/* Product pages must never display the in-app browser's review cursor overlay. */
+#codex-browser-sidebar-comments-root {
+  display: none !important;
+}
+
+section[id] {
+  scroll-margin-top: 18px;
+}
