@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-2.6.0";
+    public const string Version = "research-promotion-gate-2.7.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -34,6 +34,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var familyModels=ContextFamilies.ToDictionary(x=>x.Key,x=>FitRidge(training,1m,
             name=>!IsResearchContextFeature(name)||x.Value.Any(prefix=>name.StartsWith(prefix,StringComparison.Ordinal))),StringComparer.Ordinal);
         var boostedStumps = FitBoostedStumps(training, 25, 0.10m);
+        var moduleBoostedStumps=training.GroupBy(x=>x.ModuleId,StringComparer.Ordinal)
+            .ToDictionary(x=>x.Key,x=>FitBoostedStumps(x.ToArray(),25,.10m),StringComparer.Ordinal);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
         AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population, Func<Row,decimal> predictor)
         {
@@ -67,7 +69,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             ("ridge-context-only",ridgeContext.Predict),
             ("ridge-linear", ridge.Predict),
             ("ridge-context-interactions",ridgeInteractions.Predict),
-            ("boosted-stumps-capped", boostedStumps.Predict)
+            ("boosted-stumps-capped", boostedStumps.Predict),
+            ("module-boosted-stumps-capped",row=>moduleBoostedStumps.GetValueOrDefault(row.ModuleId,boostedStumps).Predict(row))
         };
         var variantMetrics = variants.SelectMany(variant => new[] { "Validation", "Test" }.Select(split =>
         {
@@ -103,6 +106,9 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var economicWalkForward=request.TargetName=="netR"?BuildEconomicWalkForwardMetrics(rows,15):[];
         var artifacts=new[]{Artifact("ridge-linear",request.TargetName,ridge),
             Artifact("ridge-context-interactions",request.TargetName,ridgeInteractions)};
+        var stumpArtifacts=new[]{StumpArtifact("boosted-stumps-capped",request.TargetName,"*",boostedStumps)}
+            .Concat(moduleBoostedStumps.OrderBy(x=>x.Key,StringComparer.Ordinal)
+                .Select(x=>StumpArtifact("module-boosted-stumps-capped",request.TargetName,x.Key,x.Value))).ToArray();
         var promotionGate = BuildPromotionGate(request.TargetName,variantMetrics, segmentMetrics, walkForwardMetrics,
             economicPolicyMetrics,economicWalkForward);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
@@ -110,14 +116,14 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate,
             ContextAblations=contextAblations,ContextFamilyAblations=contextFamilyAblations,
             EconomicPolicyMetrics=economicPolicyMetrics,EconomicWalkForwardMetrics=economicWalkForward,
-            ModelArtifacts=artifacts });
+            ModelArtifacts=artifacts,StumpArtifacts=stumpArtifacts });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
             SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics,
             PromotionGate:promotionGate,ContextAblations:contextAblations,
             ContextFamilyAblations:contextFamilyAblations,EconomicPolicyMetrics:economicPolicyMetrics,
-            EconomicWalkForwardMetrics:economicWalkForward,ModelArtifacts:artifacts);
+            EconomicWalkForwardMetrics:economicWalkForward,ModelArtifacts:artifacts,StumpArtifacts:stumpArtifacts);
         await PersistAsync(run, token);
         return run;
     }
@@ -140,12 +146,17 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         IReadOnlyDictionary<string,decimal> features,string variant,CancellationToken token=default)
     {
         var run=(await GetAllAsync(token)).FirstOrDefault(x=>x.RunId==runId)??throw new KeyNotFoundException("Agent baseline run was not found.");
-        var artifact=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant==variant)??throw new InvalidOperationException($"Run has no frozen '{variant}' artifact.");
-        if(artifact.Coefficients.Count!=artifact.FeatureNames.Count+1)throw new InvalidOperationException("Frozen model artifact is malformed.");
-        var prediction=artifact.Coefficients[0];for(var i=0;i<artifact.FeatureNames.Count;i++)prediction+=artifact.Coefficients[i+1]*
-            (FeatureValue(features,artifact.FeatureNames[i])-artifact.Means[i])/artifact.Scales[i];
-        prediction=Round(prediction);return new(run.RunId,artifact.ArtifactId,run.TargetName,DateTime.UtcNow,
-            Utc(featuresKnownAtUtc),prediction,prediction>0?"PredictedPositive":prediction<0?"PredictedNegative":"Neutral",artifact.ContentHash);
+        var artifact=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant==variant);
+        if(artifact is not null)
+        {if(artifact.Coefficients.Count!=artifact.FeatureNames.Count+1)throw new InvalidOperationException("Frozen model artifact is malformed.");
+            var prediction=artifact.Coefficients[0];for(var i=0;i<artifact.FeatureNames.Count;i++)prediction+=artifact.Coefficients[i+1]*(FeatureValue(features,artifact.FeatureNames[i])-artifact.Means[i])/artifact.Scales[i];
+            prediction=Round(prediction);return Score(run,artifact.ArtifactId,artifact.ContentHash,featuresKnownAtUtc,prediction);}
+        var module=features.Where(x=>x.Key.StartsWith("context.module.",StringComparison.Ordinal)&&x.Value==1)
+            .Select(x=>x.Key["context.module.".Length..]).FirstOrDefault()??"*";
+        var stump=run.StumpArtifacts?.FirstOrDefault(x=>x.Variant==variant&&(x.ModuleId==module||x.ModuleId=="*"));
+        if(stump is null)throw new InvalidOperationException($"Run has no frozen '{variant}' artifact for module '{module}'.");
+        var value=stump.InitialPrediction+stump.Stumps.Sum(x=>features.GetValueOrDefault(x.Feature)<=x.Threshold?x.LeftValue:x.RightValue);
+        return Score(run,stump.ArtifactId,stump.ContentHash,featuresKnownAtUtc,Round(value));
     }
 
     private async Task<(string DatasetHash,List<Row> Rows)> ReadAsync(string datasetId,string target,CancellationToken token)
@@ -197,6 +208,10 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
     private static AgentLinearModelArtifact Artifact(string variant,string target,RidgeModel model)
     {var hash=AgentTrainingDatasetBuilder.Hash(JsonSerializer.Serialize(new{Version,variant,target,model.Names,model.Means,model.Scales,model.Coefficients}));return new($"AMA-{hash[..32]}",variant,target,model.Names,model.Means,model.Scales,model.Coefficients,hash);}
+    private static AgentBoostedStumpArtifact StumpArtifact(string variant,string target,string module,BoostedStumpModel model)
+    {var stumps=model.Stumps.Select(x=>new AgentDecisionStumpArtifact(x.Feature,x.Threshold,x.LeftValue,x.RightValue)).ToArray();var hash=AgentTrainingDatasetBuilder.Hash(JsonSerializer.Serialize(new{Version,variant,target,module,model.Initial,Stumps=stumps}));return new($"ASA-{hash[..32]}",variant,target,module,model.Initial,stumps,hash);}
+    private static AgentResearchScore Score(AgentBaselineRun run,string artifactId,string artifactHash,DateTime known,decimal prediction)=>
+        new(run.RunId,artifactId,run.TargetName,DateTime.UtcNow,Utc(known),prediction,prediction>0?"PredictedPositive":prediction<0?"PredictedNegative":"Neutral",artifactHash);
     private static DateTime Utc(DateTime value)=>value.Kind==DateTimeKind.Utc?value:value.Kind==DateTimeKind.Unspecified?DateTime.SpecifyKind(value,DateTimeKind.Utc):value.ToUniversalTime();
     private static bool IsResearchContextFeature(string name)=>name.StartsWith("time.",StringComparison.Ordinal)||
         name.StartsWith("context.session.",StringComparison.Ordinal)||
@@ -322,7 +337,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         IReadOnlyList<AgentWalkForwardMetric> folds,IReadOnlyList<AgentEconomicPolicyMetric> economic,
         IReadOnlyList<AgentEconomicWalkForwardMetric> economicFolds)
     {
-        var candidates=new[]{"instrument-module-direction-mean","ridge-linear","boosted-stumps-capped"};
+        var candidates=new[]{"instrument-module-direction-mean","ridge-linear","boosted-stumps-capped","module-boosted-stumps-capped"};
         if(target=="netR")return BuildEconomicPromotionGate(variants,segments,economic,economicFolds,candidates);
         var candidate=variants.Where(x=>x.Split=="Validation"&&candidates.Contains(x.Variant,StringComparer.Ordinal))
             .OrderBy(x=>x.MeanAbsoluteError).ThenByDescending(x=>x.DirectionalAccuracy).First();

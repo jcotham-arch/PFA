@@ -40,3 +40,9 @@ Version `research-promotion-gate-2.6.0` also places a deterministic 6,000-exampl
 Version `actionability-segment-research-1.3.0` treats context as a selector rather than forcing every context feature into one linear model. It evaluates module and execution-policy combinations against explicit volatility, volume, auction, and momentum states; joint volatility-volume and auction-momentum states; and active regime interactions.
 
 Report `ASR-75DD88CA05C4F754E38E0F38FD6E8160` evaluated 1,011 segments with at least 100 training and 100 validation examples. All 1,011 failed development economics, so none was permitted to inspect untouched test outcomes. The report retains each rejected segment's training/validation metrics and reasons, is stored immutably, and is available from `/api/research/actionability-segments/history`. This prevents negative evidence from disappearing while protecting the test set from repeated selection pressure.
+
+## Module-specific nonlinear result
+
+Baseline run `ABR-83149016A3560F50E913F4001817D434` freezes four 25-stump ensembles: a global control plus separate failed-breakout, liquidity-sweep, and range-breakout artifacts. The module-specific scoring path resolves the applicable artifact from the point-in-time `context.module.*` feature and remains research-only with no activation or broker-routing authority.
+
+Neither the global nor module-specific nonlinear ensemble predicted any positive-expectancy scenarios in validation or untouched test. The structural ridge control remained the least-negative selectable model at -0.041838 mean net R and 0.773543 profit factor on 735 test scenarios. The combined ridge remained worse at -0.093671R and 0.516308 profit factor. This rejects shallow nonlinear rescue of the current policy labels; it does not prove that every possible entry/exit formulation is untradeable.

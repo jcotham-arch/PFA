@@ -14,14 +14,16 @@ public sealed class AgentSandboxPromotionReadinessService(AgentBaselineTrainingS
     {
         var run=(await training.GetAllAsync(token)).FirstOrDefault(x=>x.TargetName=="netR");
         if(run is null)return new("NoNetRRun",null,null,null,null,[],["No finalized net-R training run exists."],false);
-        var artifact=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant==run.PromotionGate?.Candidate)??
-            run.ModelArtifacts?.FirstOrDefault(x=>x.Variant=="ridge-linear");
+        var linear=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant==run.PromotionGate?.Candidate);
+        var stumps=run.StumpArtifacts?.Where(x=>x.Variant==run.PromotionGate?.Candidate).ToArray()??[];
+        var artifactId=linear?.ArtifactId??(stumps.Length>0?string.Join(',',stumps.Select(x=>x.ArtifactId)):null);
+        var artifactHash=linear?.ContentHash??(stumps.Length>0?AgentTrainingDatasetBuilder.Hash(string.Join('|',stumps.Select(x=>x.ContentHash))):null);
         var candidate=run.PromotionGate?.Candidate;var validation=run.EconomicPolicyMetrics?.FirstOrDefault(x=>x.Variant==candidate&&x.Split=="Validation");
         var test=run.EconomicPolicyMetrics?.FirstOrDefault(x=>x.Variant==candidate&&x.Split=="Test");
         var folds=run.EconomicWalkForwardMetrics??[];var checks=new List<AgentSandboxPromotionCheck>
         {
             Check("Frozen dataset",run.DatasetContentHash.Length>0,$"{run.DatasetId} · {run.DatasetContentHash}"),
-            Check("Frozen model artifact",artifact is not null,artifact is null?"No deployable artifact":$"{artifact.ArtifactId} · {artifact.ContentHash}"),
+            Check("Frozen model artifact",artifactId is not null,artifactId is null?"No deployable artifact":$"{artifactId} · {artifactHash}"),
             Check("Validation expectancy",validation is{SelectedSamples:>=100,MeanNetR:>0,ProfitFactor:>1},Economic(validation)),
             Check("Untouched test expectancy",test is{SelectedSamples:>=100,MeanNetR:>0,ProfitFactor:>1},Economic(test)),
             Check("Economic walk-forward",folds.Count>=3&&folds.All(x=>x.SelectedSamples>=100&&x.MeanNetR>0&&x.ProfitFactor>1),
@@ -29,9 +31,9 @@ public sealed class AgentSandboxPromotionReadinessService(AgentBaselineTrainingS
             Check("Research promotion gate",run.PromotionGate?.Status=="EligibleForResearchReview",run.PromotionGate?.Status??"Missing")
         };
         var blockers=checks.Where(x=>x.Status=="Failed").Select(x=>$"{x.Check}: {x.Evidence}").Concat(run.PromotionGate?.Reasons??[]).Distinct().ToArray();
-        var eligible=blockers.Length==0&&artifact is not null;
+        var eligible=blockers.Length==0&&artifactId is not null;
         return new(eligible?"ReadyForProspectiveSandbox":"RejectedByResearchEvidence",run.RunId,run.DatasetId,
-            artifact?.ArtifactId,candidate,checks,blockers,eligible);
+            artifactId,candidate,checks,blockers,eligible);
     }
     private static AgentSandboxPromotionCheck Check(string name,bool pass,string evidence)=>new(name,pass?"Passed":"Failed",evidence);
     private static string Economic(AgentEconomicPolicyMetric? value)=>value is null?"Missing":$"{value.MeanNetR:F3}R · PF {value.ProfitFactor:F2} · n={value.SelectedSamples} · DD {value.MaximumDrawdownR:F1}R";

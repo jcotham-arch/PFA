@@ -95,8 +95,8 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.Equal(new[]{"Train","Validation","Test"},baseline.Metrics.Select(x=>x.Split));
         Assert.Equal(4,baseline.SegmentMetrics!.Count);
         Assert.All(baseline.SegmentMetrics,metric=>Assert.True(metric.SampleCount>0));
-        Assert.Equal(20,baseline.VariantMetrics!.Count);
-        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-base-only","ridge-context-only","ridge-linear","ridge-context-interactions","boosted-stumps-capped"},
+        Assert.Equal(22,baseline.VariantMetrics!.Count);
+        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-base-only","ridge-context-only","ridge-linear","ridge-context-interactions","boosted-stumps-capped","module-boosted-stumps-capped"},
             baseline.VariantMetrics.Select(x=>x.Variant).Distinct());
         Assert.Equal(3,baseline.WalkForwardMetrics!.Count);
         Assert.All(baseline.WalkForwardMetrics,metric=>
@@ -120,6 +120,11 @@ public sealed class ProductModuleAndAgentTrainingTests
         var interactionScore=await training.ScoreAsync(baseline.RunId,Now,
             new Dictionary<string,decimal>{{"range",2m}},"ridge-context-interactions",TestContext.Current.CancellationToken);
         Assert.Equal(interactionArtifact.ArtifactId,interactionScore.ArtifactId);
+        Assert.Equal(2,baseline.StumpArtifacts!.Count);
+        var nonlinearScore=await training.ScoreAsync(baseline.RunId,Now,
+            new Dictionary<string,decimal>{{"context.module.liquidity-sweep",1m},{"range",2m}},
+            "module-boosted-stumps-capped",TestContext.Current.CancellationToken);
+        Assert.StartsWith("ASA-",nonlinearScore.ArtifactId);
         Assert.False(interactionScore.CanActivateStrategy);Assert.False(interactionScore.CanRouteToRealBroker);
         var sandboxReadiness=await new AgentSandboxPromotionReadinessService(training).GetAsync(TestContext.Current.CancellationToken);
         Assert.Equal("NoNetRRun",sandboxReadiness.Status);Assert.False(sandboxReadiness.CanCreateProspectiveSandbox);

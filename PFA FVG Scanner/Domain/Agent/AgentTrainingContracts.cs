@@ -85,6 +85,10 @@ public sealed record AgentLinearModelArtifact(string ArtifactId,string Variant,s
     IReadOnlyList<string> FeatureNames,IReadOnlyList<decimal> Means,IReadOnlyList<decimal> Scales,
     IReadOnlyList<decimal> Coefficients,string ContentHash);
 
+public sealed record AgentDecisionStumpArtifact(string Feature,decimal Threshold,decimal LeftValue,decimal RightValue);
+public sealed record AgentBoostedStumpArtifact(string ArtifactId,string Variant,string TargetName,string ModuleId,
+    decimal InitialPrediction,IReadOnlyList<AgentDecisionStumpArtifact> Stumps,string ContentHash);
+
 public sealed record AgentResearchScore(string RunId,string ArtifactId,string TargetName,DateTime ScoredAtUtc,
     DateTime FeaturesKnownAtUtc,decimal Prediction,string Classification,string ArtifactContentHash,
     bool IsResearchOnly=true,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
@@ -108,4 +112,5 @@ public sealed record AgentBaselineRun(string RunId,string ModelVersion,string Da
     IReadOnlyList<AgentContextFamilyAblationMetric>? ContextFamilyAblations=null,
     IReadOnlyList<AgentEconomicPolicyMetric>? EconomicPolicyMetrics=null,
     IReadOnlyList<AgentEconomicWalkForwardMetric>? EconomicWalkForwardMetrics=null,
-    IReadOnlyList<AgentLinearModelArtifact>? ModelArtifacts=null);
+    IReadOnlyList<AgentLinearModelArtifact>? ModelArtifacts=null,
+    IReadOnlyList<AgentBoostedStumpArtifact>? StumpArtifacts=null);
