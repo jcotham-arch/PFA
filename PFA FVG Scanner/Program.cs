@@ -128,6 +128,8 @@ builder.Services.AddSingleton<CertificationCampaignService>();
 builder.Services.AddSingleton<LivePilotReadinessAuditor>();
 builder.Services.AddSingleton<LivePilotReadinessProjectionService>();
 builder.Services.AddSingleton<ProductModuleCatalog>();
+builder.Services.AddSingleton<AdvancedStrategiesCompatibilityService>();
+builder.Services.AddSingleton<ConnectionSettingsService>();
 builder.Services.AddSingleton<ModuleEntitlementEvaluator>();
 builder.Services.AddSingleton<AgentTrainingDatasetBuilder>();
 builder.Services.AddSingleton<GenericOutcomeDatasetService>();

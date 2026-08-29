@@ -27,4 +27,13 @@ public sealed class InteractiveProductSurfaceTests
         Assert.Contains("evaluateAdaptiveScenarios",sandbox);
         Assert.Contains("Refresh sandbox",sandboxScript);Assert.Contains("Simulation only",sandboxScript);
     }
+
+    [Fact]
+    public void SettingsSurfaceExposesConnectionCatalogWithoutSecretEntry()
+    {
+        var settings=File.ReadAllText(Path.Combine(WebRoot,"settings.html"));
+        var script=File.ReadAllText(Path.Combine(WebRoot,"settings.js"));
+        Assert.Contains("Settings & Connections",settings);Assert.Contains("/api/settings/connections",script);
+        Assert.Contains("encrypted per-user vault",script);Assert.Contains("disabled",script);
+    }
 }

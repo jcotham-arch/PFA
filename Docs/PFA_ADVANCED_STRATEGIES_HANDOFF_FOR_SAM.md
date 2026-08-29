@@ -4,6 +4,8 @@
 
 This is a standalone build brief for the developer responsible for **Advanced Strategies**. It may be pasted into a new ChatGPT or Codex task as project context. The customer-facing product name is **Advanced Strategies**. Developer ownership must not be embedded in the public module ID or display name.
 
+For the latest live MES research results, compiled compatibility endpoint, and exact current landing path, also provide `Docs/PFA_ADVANCED_STRATEGIES_CURRENT_INTEGRATION_PACKET.md`.
+
 ## Product being built
 
 Prop Firm Assassins (PFA) is a modular futures market-intelligence, research, prop-firm certification, and eventually tightly governed trading-assistance platform. Its core objective is to turn point-in-time market data into reproducible pattern, sequence, strategy, and risk evidence that helps traders pass futures prop-firm challenges and qualify for payouts without overstating backtest performance.
