@@ -35,7 +35,7 @@ The next layer aligns each episode with canonical bars, detected patterns, seque
 
 ## Point-in-time market alignment
 
-Version `trade-journal-market-alignment-1.2.0` associates an episode only with canonical bars completed by entry, registered observations known during the preceding 30 minutes, and terminology-neutral structural events whose known-at clock is no later than entry. It records direction agreement, recency, source identity, and immutable episode-level evidence.
+Version `trade-journal-market-alignment-1.3.0` associates an episode only with canonical bars completed by entry, registered observations known during the preceding 30 minutes, and terminology-neutral structural events whose known-at clock is no later than entry. It records direction agreement, recency, source identity, and immutable episode-level evidence. Directional segments use exactly the latest known instance of each signal family per episode so conflicting earlier signals cannot place one episode in both aligned and opposed rows.
 
 Reports include broad pattern and structural-event summaries plus aligned-versus-opposed directional segments. These are hypothesis generators from trader-selected behavior, not independent strategy validation. Account-specific reports and results remain local. Candidate segments must be reformulated as explicit entry, stop, target, management, and abstention rules and replayed on the full chronologically partitioned market corpus before prospective sandbox testing.
 

@@ -10,7 +10,7 @@ namespace PFA_FVG_Scanner.Services;
 public sealed class TradeJournalMarketAlignmentService(PfaDatabase database,TradeJournalImportService journals,
     DailyMarketDiscoveryService dailyDiscovery)
 {
-    public const string Version="trade-journal-market-alignment-1.2.0";
+    public const string Version="trade-journal-market-alignment-1.3.0";
 
     public async Task<TradeJournalAlignmentReport> BuildAsync(string importId,CancellationToken token=default)
     {
@@ -37,13 +37,14 @@ public sealed class TradeJournalMarketAlignmentService(PfaDatabase database,Trad
             .GroupBy(x=>x.Match.EventType).Select(group=>StructuralMetric(group.Key,group
                 .GroupBy(x=>x.Alignment.EpisodeId).Select(x=>x.OrderBy(y=>y.Match.MinutesBeforeEntry).First()).ToArray()))
             .OrderByDescending(x=>x.MatchedEpisodes).ThenBy(x=>x.EventType).ToArray();
-        var directionalSegments=alignments.SelectMany(x=>x.PatternMatches.Select(match=>new DirectionalRow(
-                "RegisteredPattern",match.ModuleId,match.DirectionAgrees,x.NetProfit,x.EpisodeId)))
-            .Concat(alignments.SelectMany(x=>x.StructuralEventMatches.Select(match=>new DirectionalRow(
-                "StructuralEvent",match.EventType,match.DirectionAgrees,x.NetProfit,x.EpisodeId))))
+        var directionalSegments=alignments.SelectMany(x=>x.PatternMatches.GroupBy(match=>match.ModuleId)
+                .Select(group=>group.OrderBy(match=>match.MinutesBeforeEntry).First())
+                .Select(match=>new DirectionalRow("RegisteredPattern",match.ModuleId,match.DirectionAgrees,x.NetProfit,x.EpisodeId)))
+            .Concat(alignments.SelectMany(x=>x.StructuralEventMatches.GroupBy(match=>match.EventType)
+                .Select(group=>group.OrderBy(match=>match.MinutesBeforeEntry).First())
+                .Select(match=>new DirectionalRow("StructuralEvent",match.EventType,match.DirectionAgrees,x.NetProfit,x.EpisodeId))))
             .GroupBy(x=>new{x.SourceKind,x.SignalType,x.DirectionAgrees})
-            .Select(group=>DirectionalMetric(group.Key.SourceKind,group.Key.SignalType,group.Key.DirectionAgrees,
-                group.GroupBy(x=>x.EpisodeId).Select(x=>x.First()).ToArray()))
+            .Select(group=>DirectionalMetric(group.Key.SourceKind,group.Key.SignalType,group.Key.DirectionAgrees,group.ToArray()))
             .OrderBy(x=>x.SourceKind).ThenBy(x=>x.SignalType).ThenBy(x=>x.DirectionRelationship).ToArray();
         var seed=JsonSerializer.Serialize(new{Version,importId,Alignments=alignments.Select(x=>x.ContentHash)});
         var contentHash=AgentTrainingDatasetBuilder.Hash(seed);var report=new TradeJournalAlignmentReport(
