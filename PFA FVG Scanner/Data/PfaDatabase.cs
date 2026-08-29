@@ -68,6 +68,7 @@ namespace PFA_FVG_Scanner.Data
             await CreatePatternTradeResearchTablesAsync(connection);
             await CreateSequenceTradeResearchTablesAsync(connection);
             await CreateTradeJournalTablesAsync(connection);
+            await CreateTradeJournalAlignmentTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
@@ -162,6 +163,33 @@ namespace PFA_FVG_Scanner.Data
                 INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
                 VALUES('TRADE_JOURNAL_IMPORT_V1',datetime('now'),
                     'Add privacy-safe immutable execution-journal imports and reconstructed trade episodes.');
+                """;await ExecuteAsync(connection,sql);
+        }
+
+        private static async Task CreateTradeJournalAlignmentTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS TradeJournalAlignmentReports
+                (ReportId TEXT PRIMARY KEY,AlignmentVersion TEXT NOT NULL,ImportId TEXT NOT NULL,
+                 EpisodeCount INTEGER NOT NULL,PatternMatchedEpisodes INTEGER NOT NULL,ContentHash TEXT NOT NULL,
+                 ReportJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 FOREIGN KEY(ImportId) REFERENCES TradeJournalImports(ImportId));
+                CREATE TABLE IF NOT EXISTS TradeJournalEpisodeAlignments
+                (ReportId TEXT NOT NULL,EpisodeId TEXT NOT NULL,InstrumentId TEXT NOT NULL,EntryTimeUtc TEXT NOT NULL,
+                 NetProfit TEXT NOT NULL,PatternMatchCount INTEGER NOT NULL,ContentHash TEXT NOT NULL,
+                 AlignmentJson TEXT NOT NULL,PRIMARY KEY(ReportId,EpisodeId),
+                 FOREIGN KEY(ReportId) REFERENCES TradeJournalAlignmentReports(ReportId));
+                CREATE INDEX IF NOT EXISTS IX_TradeJournalEpisodeAlignments_Entry
+                    ON TradeJournalEpisodeAlignments(ReportId,InstrumentId,EntryTimeUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_TradeJournalAlignmentReports_NoUpdate BEFORE UPDATE ON TradeJournalAlignmentReports
+                    BEGIN SELECT RAISE(ABORT,'Trade journal alignment reports are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_TradeJournalAlignmentReports_NoDelete BEFORE DELETE ON TradeJournalAlignmentReports
+                    BEGIN SELECT RAISE(ABORT,'Trade journal alignment reports are immutable');END;
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('TRADE_JOURNAL_ALIGNMENT_V1',datetime('now'),
+                    'Add immutable point-in-time trade-journal to market-pattern alignment evidence.');
                 """;await ExecuteAsync(connection,sql);
         }
 

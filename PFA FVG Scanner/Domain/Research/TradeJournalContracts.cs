@@ -19,3 +19,33 @@ public sealed record TradeJournalImportManifest(string ImportId,string ImporterV
     IReadOnlyList<string> Instruments,IReadOnlyList<string> Contracts,IReadOnlyList<string> Warnings,
     bool IsBehavioralEvidence=true,bool IsRecommendedStrategy=false,bool CanActivateStrategy=false,
     bool CanRouteToRealBroker=false);
+
+public sealed record TradeJournalPatternMatch(string ObservationId,int ObservationRevision,string ModuleId,
+    string PatternType,string PatternDirection,DateTime PatternKnownAtUtc,decimal MinutesBeforeEntry,
+    bool DirectionAgrees,string ObservationContentHash);
+
+public sealed record TradeJournalStructuralEventMatch(string EventId,string EventType,string EventDirection,
+    DateTime KnownAtUtc,decimal MinutesBeforeEntry,decimal Strength,bool DirectionAgrees,string Evidence);
+
+public sealed record TradeJournalEpisodeAlignment(string EpisodeId,string InstrumentId,string ContractId,
+    TradeJournalDirection Direction,DateTime EntryTimeUtc,decimal NetProfit,bool CanonicalBarAvailable,
+    string? CanonicalBarId,DateTime? CanonicalBarCloseTimeUtc,IReadOnlyList<TradeJournalPatternMatch> PatternMatches,
+    IReadOnlyList<TradeJournalStructuralEventMatch> StructuralEventMatches,string ContentHash);
+
+public sealed record TradeJournalPatternBehaviorMetric(string ModuleId,string PatternType,int MatchedEpisodes,
+    int Wins,int Losses,decimal NetProfit,decimal WinRate,decimal ProfitFactor,decimal DirectionAgreementRate);
+
+public sealed record TradeJournalStructuralBehaviorMetric(string EventType,int MatchedEpisodes,int Wins,int Losses,
+    decimal NetProfit,decimal WinRate,decimal ProfitFactor,decimal DirectionAgreementRate);
+
+public sealed record TradeJournalDirectionalBehaviorMetric(string SourceKind,string SignalType,
+    string DirectionRelationship,int MatchedEpisodes,int Wins,int Losses,decimal NetProfit,
+    decimal WinRate,decimal ProfitFactor);
+
+public sealed record TradeJournalAlignmentReport(string ReportId,string AlignmentVersion,string ImportId,
+    DateTime CreatedAtUtc,int Episodes,int CanonicalBarAlignedEpisodes,int PatternMatchedEpisodes,
+    int StructuralEventMatchedEpisodes,int UnmatchedEpisodes,IReadOnlyList<TradeJournalPatternBehaviorMetric> PatternMetrics,
+    IReadOnlyList<TradeJournalStructuralBehaviorMetric> StructuralMetrics,
+    IReadOnlyList<TradeJournalDirectionalBehaviorMetric> DirectionalSegments,
+    IReadOnlyList<string> Limitations,string ContentHash,bool IsBehavioralEvidence=true,
+    bool IsStrategyValidation=false,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);

@@ -32,3 +32,11 @@ Source journals, content fingerprints, import identifiers, account-specific metr
 - `GET /api/research/trade-journals/{importId}/episodes`: normalized reconstructed episodes.
 
 The next layer aligns each episode with canonical bars, detected patterns, sequences, and point-in-time context available at entry, then compares winners and losers and runs counterfactual entry/stop/target policies without rewriting the source history.
+
+## Point-in-time market alignment
+
+Version `trade-journal-market-alignment-1.2.0` associates an episode only with canonical bars completed by entry, registered observations known during the preceding 30 minutes, and terminology-neutral structural events whose known-at clock is no later than entry. It records direction agreement, recency, source identity, and immutable episode-level evidence.
+
+Reports include broad pattern and structural-event summaries plus aligned-versus-opposed directional segments. These are hypothesis generators from trader-selected behavior, not independent strategy validation. Account-specific reports and results remain local. Candidate segments must be reformulated as explicit entry, stop, target, management, and abstention rules and replayed on the full chronologically partitioned market corpus before prospective sandbox testing.
+
+Trend continuation, pullback/retracement, and mean reversion are registered as planned detector families. Breakout and failed-breakout research remains active. Spread trading is treated separately as a future multi-leg strategy family because it requires synchronized leg execution, roll-aware pricing, costs, margin, and portfolio risk rather than a single-market pattern detector.

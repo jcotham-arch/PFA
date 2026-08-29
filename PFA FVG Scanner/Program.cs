@@ -141,6 +141,7 @@ builder.Services.AddSingleton<PatternTradeNotificationService>();
 builder.Services.AddSingleton<PatternObservationResearchService>();
 builder.Services.AddSingleton<SequenceTradeResearchService>();
 builder.Services.AddSingleton<TradeJournalImportService>();
+builder.Services.AddSingleton<TradeJournalMarketAlignmentService>();
 
 // ------------------------------------------------------------
 // CORE ANALYSIS / RESEARCH SERVICES
