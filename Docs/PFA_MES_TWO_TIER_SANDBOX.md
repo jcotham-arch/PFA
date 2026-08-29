@@ -20,6 +20,16 @@ This is an early-observation gate, not a profitability claim. A candidate enteri
 
 The first real blind replay began on August 29, 2026. Four frozen pullback-continuation variants produced eight resolved executions in total. All eight lost, with mean net result `-0.596R` and profit factor `0.00`. Each candidate currently has only two resolved blind executions, so the evidence is negative but too small for the frozen 100-trade culling rule. The versions remain unchanged and are accumulating prospective evidence.
 
+## Adaptive Scenario Lab
+
+The MES Sandbox includes an immutable champion/challenger learning loop. It reads only Train and Validation partitions when selecting a development champion, joins every sample to its source observation, and reports coverage by resolved trading day and source timeframe. The withheld Test partition cannot influence selection.
+
+Each generation proposes controlled neighboring variants for target, maximum hold/time-abort, and exit management. A variant is a new version with explicit parent lineage; the frozen version under blind evaluation never mutates. Repeated generation requests are idempotent until the source run, evidence cutoff, policy, or champion changes.
+
+Current live MES generation 2 has 54 resolved development trades across 40 distinct resolved trading days. Its mean result is `+0.020241R` and profit factor is `1.072945`, but its qualifying evidence comes only from the 5-minute pattern stream. It therefore remains `AwaitingDevelopmentEvidence` until the 1-minute, 15-minute, and 1-hour lanes are evaluated. Three one-variable challengers are queued, and the Test partition was not used for champion selection.
+
+The next layer replays queued challengers over chronological development windows, compares pattern families in parallel lanes, ranks champion versus challenger by stability rather than the best single result, freezes one survivor, and reserves a strictly later untouched date range for blind replay.
+
 ## Tier 2 — Proving Ground
 
 The existing certification lane remains strict. Standard sandbox instances require a validation-complete frozen strategy. The execution certification engine already models seeded latency and jitter, bid/ask execution, queue-ahead uncertainty, participation-limited partial fills, volatility and quantity slippage, commissions, stale data, and venue outages. Prop-firm certification already supports static, end-of-day trailing, and intraday high-water drawdown; daily loss, maximum contracts, session flatten, consistency, automation, payout, and operational-data rules.

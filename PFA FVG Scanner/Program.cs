@@ -134,6 +134,7 @@ builder.Services.AddSingleton<GenericOutcomeDatasetService>();
 builder.Services.AddSingleton<ActionabilityOutcomeDatasetService>();
 builder.Services.AddSingleton<ExploratorySandboxCandidateService>();
 builder.Services.AddSingleton<ExploratoryPaperCampaignService>();
+builder.Services.AddSingleton<AdaptiveScenarioLabService>();
 builder.Services.AddSingleton<ActionabilitySegmentResearchService>();
 builder.Services.AddSingleton<ActionabilityDecisionPolicyService>();
 builder.Services.AddSingleton<ActionabilityLabelProfileService>();

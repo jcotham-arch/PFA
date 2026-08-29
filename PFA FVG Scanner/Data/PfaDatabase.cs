@@ -67,6 +67,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateActionabilitySegmentResearchTablesAsync(connection);
             await CreatePatternTradeResearchTablesAsync(connection);
             await CreateExploratoryPaperCampaignTablesAsync(connection);
+            await CreateAdaptiveScenarioLabTablesAsync(connection);
             await CreateSequenceTradeResearchTablesAsync(connection);
             await CreateTradeJournalTablesAsync(connection);
             await CreateTradeJournalAlignmentTablesAsync(connection);
@@ -207,6 +208,27 @@ namespace PFA_FVG_Scanner.Data
                 INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
                 VALUES('TRADE_JOURNAL_IMPORT_V1',datetime('now'),
                     'Add privacy-safe immutable execution-journal imports and reconstructed trade episodes.');
+                """;await ExecuteAsync(connection,sql);
+        }
+
+        private static async Task CreateAdaptiveScenarioLabTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS AdaptiveScenarioGenerations
+                (GenerationId TEXT PRIMARY KEY,GenerationNumber INTEGER NOT NULL,InstrumentId TEXT NOT NULL,
+                 SourcePatternTradeRunId TEXT NOT NULL,Status TEXT NOT NULL,DevelopmentCutoffUtc TEXT NOT NULL,
+                 EarliestNextBlindTradingDate TEXT NOT NULL,ContentHash TEXT NOT NULL,GenerationJson TEXT NOT NULL,
+                 CreatedAtUtc TEXT NOT NULL,CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_AdaptiveScenarioGenerations_Number
+                    ON AdaptiveScenarioGenerations(InstrumentId,GenerationNumber);
+                CREATE TRIGGER IF NOT EXISTS TR_AdaptiveScenarioGenerations_NoUpdate BEFORE UPDATE ON AdaptiveScenarioGenerations
+                    BEGIN SELECT RAISE(ABORT,'Adaptive scenario generations are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_AdaptiveScenarioGenerations_NoDelete BEFORE DELETE ON AdaptiveScenarioGenerations
+                    BEGIN SELECT RAISE(ABORT,'Adaptive scenario generations are immutable');END;
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('MES_ADAPTIVE_SCENARIO_LAB_V1',datetime('now'),
+                    'Add immutable MES champion/challenger generations with chronological blind-data boundaries.');
                 """;await ExecuteAsync(connection,sql);
         }
 

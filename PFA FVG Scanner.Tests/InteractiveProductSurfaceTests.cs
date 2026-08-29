@@ -22,7 +22,8 @@ public sealed class InteractiveProductSurfaceTests
         var sandbox=File.ReadAllText(Path.Combine(WebRoot,"sandbox.html"));
         var sandboxScript=File.ReadAllText(Path.Combine(WebRoot,"sandbox-experience.js"));
         Assert.Contains("/agent-experience.js?v=1",agent);Assert.Contains("/experience.css",agent);
-        Assert.Contains("/sandbox-experience.js?v=1",sandbox);Assert.Contains("/experience.css",sandbox);
+        Assert.Contains("/sandbox-experience.js?v=3",sandbox);Assert.Contains("/experience.css",sandbox);
+        Assert.Contains("MES Adaptive Scenario Lab",sandbox);Assert.Contains("generateAdaptiveScenario",sandbox);
         Assert.Contains("Refresh sandbox",sandboxScript);Assert.Contains("Simulation only",sandboxScript);
     }
 }
