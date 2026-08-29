@@ -19,7 +19,7 @@ public sealed record ResearchContextSnapshot(string SnapshotId,string Version,st
 
 public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessions)
 {
-    public const string Version="bar-derived-context-1.2.0";
+    public const string Version="bar-derived-context-1.3.0";
 
     public ResearchContextSnapshot Build(string instrumentId,string? contractId,string timeframe,DateTime decisionTimeUtc,
         IReadOnlyList<CanonicalBar> source,OrderFlowFeatureSnapshot? orderFlow=null)
@@ -28,7 +28,7 @@ public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessi
             x.InstrumentId.Equals(instrumentId,StringComparison.OrdinalIgnoreCase)&&
             (contractId is null||x.ContractId==contractId)).OrderBy(x=>x.CloseTimeUtc).ToArray();
         var recent=bars.TakeLast(120).ToArray();var refs=recent.Select(x=>$"{x.CanonicalBarId}:r{x.Revision}").ToArray();
-        var values=new List<ResearchContextFeatureSet>{Seasonality(decision),Session(instrumentId,decision),
+        var values=new List<ResearchContextFeatureSet>{Seasonality(decision,bars),Session(instrumentId,decision),
             Volatility(recent,refs),Volume(recent,refs),Trend(recent,refs),Momentum(recent,refs),
             LiquidityProxy(recent,refs),ContractCycle(contractId,decision),OrderFlow(instrumentId,contractId,decision,orderFlow),
             SourceUnavailable("level-two","Timestamped market-depth snapshots are not connected for this decision clock."),
@@ -38,8 +38,11 @@ public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessi
         var hash=Hash(seed);return new($"RCS-{hash[..32]}",Version,instrumentId,contractId,timeframe,decision,decision,values,hash);
     }
 
-    private static ResearchContextFeatureSet Seasonality(DateTime clock)
-    {var minute=clock.Hour*60+clock.Minute;var n=new Dictionary<string,decimal>{{"minuteOfDay",minute},{"hourSin",(decimal)Math.Sin(2*Math.PI*minute/1440d)},{"hourCos",(decimal)Math.Cos(2*Math.PI*minute/1440d)},{"weekdaySin",(decimal)Math.Sin(2*Math.PI*(int)clock.DayOfWeek/7d)},{"weekdayCos",(decimal)Math.Cos(2*Math.PI*(int)clock.DayOfWeek/7d)},{"monthSin",(decimal)Math.Sin(2*Math.PI*(clock.Month-1)/12d)},{"monthCos",(decimal)Math.Cos(2*Math.PI*(clock.Month-1)/12d)}};return Available("seasonality",n,new Dictionary<string,string>(),[]);}
+    private static ResearchContextFeatureSet Seasonality(DateTime clock,CanonicalBar[] bars)
+    {var minute=clock.Hour*60+clock.Minute;var n=new Dictionary<string,decimal>{{"minuteOfDay",minute},{"hourSin",(decimal)Math.Sin(2*Math.PI*minute/1440d)},{"hourCos",(decimal)Math.Cos(2*Math.PI*minute/1440d)},{"weekdaySin",(decimal)Math.Sin(2*Math.PI*(int)clock.DayOfWeek/7d)},{"weekdayCos",(decimal)Math.Cos(2*Math.PI*(int)clock.DayOfWeek/7d)},{"monthSin",(decimal)Math.Sin(2*Math.PI*(clock.Month-1)/12d)},{"monthCos",(decimal)Math.Cos(2*Math.PI*(clock.Month-1)/12d)}};
+        var history=bars.Where(x=>x.CloseTimeUtc<clock&&x.CloseTimeUtc.Hour==clock.Hour&&x.CloseTimeUtc.Minute==clock.Minute).TakeLast(40).ToArray();var categorical=new Dictionary<string,string>{{"historyStatus",history.Length>=10?"Available":"InsufficientHistory"}};
+        if(history.Length>=10){var returns=history.Select(x=>x.Open==0?0:(x.Close-x.Open)/x.Open).ToArray();n["historySampleCount"]=history.Length;n["meanRangeAtClock"]=history.Average(x=>x.High-x.Low);n["meanVolumeAtClock"]=history.Average(x=>x.Volume);n["meanReturnFractionAtClock"]=returns.Average();n["meanAbsoluteReturnFractionAtClock"]=returns.Average(Math.Abs);n["positiveCloseRateAtClock"]=history.Count(x=>x.Close>x.Open)/(decimal)history.Length;}
+        return Available("seasonality",n,categorical,history.Select(x=>$"{x.CanonicalBarId}:r{x.Revision}").ToArray());}
     private ResearchContextFeatureSet Session(string instrument,DateTime clock)
     {var value=sessions.Assign(instrument,clock);var elapsed=(decimal)(clock-value.Session.SessionOpenUtc).TotalMinutes;var duration=(decimal)(value.Session.SessionCloseUtc-value.Session.SessionOpenUtc).TotalMinutes;return Available("session-structure",new Dictionary<string,decimal>{{"minutesFromSessionOpen",elapsed},{"sessionProgress",duration<=0?0:elapsed/duration},{"isHoliday",value.Session.IsHoliday?1:0},{"isEarlyClose",value.Session.IsEarlyClose?1:0}},new Dictionary<string,string>{{"segment",value.Segment.ToString()},{"assignmentQuality",value.Session.Quality.ToString()}},[]);}
     private static ResearchContextFeatureSet Volatility(CanonicalBar[] bars,string[] refs)

@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.6.0";
+    public const string Version = "generic-outcome-dataset-1.7.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -61,6 +61,34 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
         return values;
     }
 
+    public async Task<AgentDatasetFeatureCoverage> GetFeatureCoverageAsync(string datasetId,string? prefix=null,
+        CancellationToken token=default)
+    {
+        if(string.IsNullOrWhiteSpace(datasetId))throw new ArgumentException("Dataset identity is required.");
+        prefix=string.IsNullOrWhiteSpace(prefix)?null:prefix.Trim();
+        await using var connection=database.CreateConnection();await connection.OpenAsync(token);
+        await using var command=connection.CreateCommand();
+        command.CommandText="SELECT FeatureJson FROM AgentResearchExamples WHERE DatasetId=$dataset ORDER BY ExampleId";
+        command.Parameters.AddWithValue("$dataset",datasetId.Trim());
+        var counts=new Dictionary<string,(int Present,int NonZero)>(StringComparer.Ordinal);var total=0;
+        await using var reader=await command.ExecuteReaderAsync(token);
+        while(await reader.ReadAsync(token))
+        {
+            total++;using var document=JsonDocument.Parse(reader.GetString(0));
+            foreach(var property in document.RootElement.EnumerateObject())
+            {
+                if(prefix is not null&&!property.Name.StartsWith(prefix,StringComparison.Ordinal))continue;
+                if(!property.Value.TryGetDecimal(out var value))continue;
+                counts.TryGetValue(property.Name,out var count);
+                counts[property.Name]=(count.Present+1,count.NonZero+(value==0m?0:1));
+            }
+        }
+        if(total==0)throw new KeyNotFoundException($"Agent research dataset '{datasetId}' was not found or has no examples.");
+        var features=counts.OrderBy(x=>x.Key,StringComparer.Ordinal).Select(x=>new AgentDatasetFeatureCoverageItem(
+            x.Key,x.Value.Present,x.Value.NonZero,x.Value.Present/(decimal)total,x.Value.NonZero/(decimal)total)).ToArray();
+        return new(datasetId.Trim(),total,prefix,features);
+    }
+
     private async Task<List<GenericOutcomeResearchExample>> ReadCandidatesAsync(DateTime asOf, int horizon,
         IReadOnlyList<string> instruments, CancellationToken token)
     {
@@ -98,6 +126,15 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
                        AND julianday(f.WindowEndUtc)>=julianday(o.KnownAtUtc)-(5.0/1440.0)
                        AND (f.ContractId IS NULL OR f.ContractId=o.ContractId)
                        ORDER BY f.WindowEndUtc DESC,f.KnownAtUtc DESC LIMIT 1) orderFlow
+                   ,(SELECT json_object('sampleCount',COUNT(*),'meanRange',AVG(x.barRange),'meanVolume',AVG(x.volume),
+                                       'meanReturnFraction',AVG(x.returnFraction),'meanAbsoluteReturnFraction',AVG(ABS(x.returnFraction)),
+                                       'positiveCloseRate',AVG(CASE WHEN x.close>x.open THEN 1.0 ELSE 0.0 END))
+                     FROM (SELECT CAST(b.High AS REAL)-CAST(b.Low AS REAL) barRange,CAST(b.Volume AS REAL) volume,
+                                  CAST(b.Open AS REAL) open,CAST(b.Close AS REAL) close,
+                                  CASE WHEN CAST(b.Open AS REAL)=0 THEN 0 ELSE (CAST(b.Close AS REAL)-CAST(b.Open AS REAL))/CAST(b.Open AS REAL) END returnFraction
+                           FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
+                             AND b.CloseTimeUtc<o.KnownAtUtc AND strftime('%H:%M',b.CloseTimeUtc)=strftime('%H:%M',o.KnownAtUtc)
+                           ORDER BY b.CloseTimeUtc DESC LIMIT 40) x) seasonalityHistory
             FROM UniversalMarketObservations o
             JOIN UniversalMarketOutcomes u ON u.ObservationId=o.ObservationId
             JOIN UniversalOutcomeMetrics close ON close.OutcomeId=u.OutcomeId
@@ -139,7 +176,7 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             features["context.session.progressUtcDay"]=minuteOfDay/1440m;
             PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(19)?null:reader.GetString(19),
                 reader.IsDBNull(20)?null:reader.GetString(20),reader.IsDBNull(21)?null:reader.GetString(21),
-                reader.IsDBNull(22)?null:reader.GetString(22));
+                reader.IsDBNull(22)?null:reader.GetString(22),reader.IsDBNull(23)?null:reader.GetString(23));
             var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["directionalCloseTicks"] = Decimal(reader.GetString(16)),

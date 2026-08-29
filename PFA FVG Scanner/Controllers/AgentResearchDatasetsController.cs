@@ -21,4 +21,12 @@ public sealed class AgentResearchDatasetsController(GenericOutcomeDatasetService
         catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
         catch (InvalidOperationException exception) { return Conflict(new { message = exception.Message }); }
     }
+
+    [HttpGet("{datasetId}/feature-coverage")]
+    public async Task<IActionResult> FeatureCoverage(string datasetId,[FromQuery]string? prefix,CancellationToken token)
+    {
+        try{return Ok(await datasets.GetFeatureCoverageAsync(datasetId,prefix,token));}
+        catch(ArgumentException exception){return BadRequest(new{message=exception.Message});}
+        catch(KeyNotFoundException exception){return NotFound(new{message=exception.Message});}
+    }
 }

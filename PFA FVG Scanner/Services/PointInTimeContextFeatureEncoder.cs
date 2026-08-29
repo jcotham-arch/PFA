@@ -9,10 +9,11 @@ namespace PFA_FVG_Scanner.Services;
 /// </summary>
 public static class PointInTimeContextFeatureEncoder
 {
-    public const string Version = "point-in-time-context-features-1.1.0";
+    public const string Version = "point-in-time-context-features-1.2.0";
 
     public static void Add(Dictionary<string, decimal> features, string? latestBarJson,
-        string? priorCloseText, string? contextWindowJson,string? orderFlowSnapshotJson=null)
+        string? priorCloseText, string? contextWindowJson,string? orderFlowSnapshotJson=null,
+        string? seasonalityHistoryJson=null)
     {
         var latestAvailable = TryReadLatest(latestBarJson, out var close, out var high, out var low, out var volume);
         Gate(features, "canonical.latestBar", latestAvailable);
@@ -24,6 +25,8 @@ public static class PointInTimeContextFeatureEncoder
 
         var contextAvailable = TryReadWindow(contextWindowJson, out var window) && window.BarCount >= 20;
         Gate(features, "canonical.context20", contextAvailable);
+        var seasonalAvailable=TryReadSeasonality(seasonalityHistoryJson,out var seasonal)&&seasonal.SampleCount>=10;
+        Gate(features,"canonical.seasonalityHistory",seasonalAvailable);
 
         // These gates explicitly distinguish an absent external feed from a measured neutral value.
         var orderFlowAvailable=TryReadOrderFlow(orderFlowSnapshotJson,out var orderFlow);
@@ -43,6 +46,20 @@ public static class PointInTimeContextFeatureEncoder
             if(orderFlow.LastBidAskImbalance.HasValue)features["context.orderFlow.lastBidAskImbalance"]=orderFlow.LastBidAskImbalance.Value;
             if(latestAvailable&&close!=0&&orderFlow.PointOfControlPrice.HasValue)
                 features["context.orderFlow.pointOfControlDistanceFraction"]=(orderFlow.PointOfControlPrice.Value-close)/close;
+        }
+
+        if(seasonalAvailable)
+        {
+            features["context.seasonality.historySampleCountLog"]=(decimal)Math.Log(1+seasonal.SampleCount);
+            features["context.seasonality.meanReturnFractionAtClock"]=seasonal.MeanReturnFraction;
+            features["context.seasonality.meanAbsoluteReturnFractionAtClock"]=seasonal.MeanAbsoluteReturnFraction;
+            features["context.seasonality.positiveCloseRateAtClock"]=seasonal.PositiveCloseRate;
+            features["context.seasonality.directionalBiasAtClock"]=2*seasonal.PositiveCloseRate-1;
+            if(latestAvailable)
+            {var seasonalCurrentRange=high-low;features["context.seasonality.rangeVsClockBaseline"]=seasonal.MeanRange==0?0:seasonalCurrentRange/seasonal.MeanRange;
+                features["context.seasonality.volumeVsClockBaseline"]=seasonal.MeanVolume==0?0:volume/seasonal.MeanVolume;}
+            if(features.TryGetValue("direction",out var patternDirection))
+                features["context.interaction.directionAlignedSeasonalBias"]=Math.Sign(patternDirection)*(2*seasonal.PositiveCloseRate-1);
         }
 
         if (latestAvailable)
@@ -146,6 +163,13 @@ public static class PointInTimeContextFeatureEncoder
         catch(JsonException){return false;}
     }
 
+    private static bool TryReadSeasonality(string? json,out SeasonalWindow window)
+    {window=default;if(string.IsNullOrWhiteSpace(json))return false;try{using var document=JsonDocument.Parse(json);var root=document.RootElement;
+        if(!TryDecimal(root,"sampleCount",out var count)||!TryDecimal(root,"meanRange",out var range)||!TryDecimal(root,"meanVolume",out var volume)||
+           !TryDecimal(root,"meanReturnFraction",out var meanReturn)||!TryDecimal(root,"meanAbsoluteReturnFraction",out var meanAbsolute)||
+           !TryDecimal(root,"positiveCloseRate",out var positive))return false;
+        window=new((int)count,range,volume,meanReturn,meanAbsolute,positive);return true;}catch(JsonException){return false;}}
+
     private static bool TryDecimal(JsonElement root, string name, out decimal value)
     {
         value = 0;
@@ -164,4 +188,6 @@ public static class PointInTimeContextFeatureEncoder
         decimal MeanVolume5, decimal MeanVolume20, decimal MeanBody20, decimal High20, decimal Low20);
     private readonly record struct OrderFlowWindow(decimal TotalVolume,decimal BuyVolume,decimal SellVolume,
         decimal UnknownVolume,decimal Delta,decimal CumulativeDelta,decimal? PointOfControlPrice,decimal? LastBidAskImbalance);
+    private readonly record struct SeasonalWindow(int SampleCount,decimal MeanRange,decimal MeanVolume,
+        decimal MeanReturnFraction,decimal MeanAbsoluteReturnFraction,decimal PositiveCloseRate);
 }

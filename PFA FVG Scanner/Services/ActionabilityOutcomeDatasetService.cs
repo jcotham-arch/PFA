@@ -9,7 +9,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version="actionability-outcome-dataset-1.4.0";
+    public const string Version="actionability-outcome-dataset-1.5.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(ActionabilityOutcomeDatasetRequest request,
         CancellationToken token=default)
@@ -63,6 +63,16 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
                        AND julianday(f.WindowEndUtc)>=julianday(json_extract(s.SampleJson,'$.EntryTimeUtc'))-(5.0/1440.0)
                        AND (f.ContractId IS NULL OR f.ContractId=json_extract(s.SampleJson,'$.ContractId'))
                        ORDER BY f.WindowEndUtc DESC,f.KnownAtUtc DESC LIMIT 1) orderFlow
+                   ,(SELECT json_object('sampleCount',COUNT(*),'meanRange',AVG(x.barRange),'meanVolume',AVG(x.volume),
+                                       'meanReturnFraction',AVG(x.returnFraction),'meanAbsoluteReturnFraction',AVG(ABS(x.returnFraction)),
+                                       'positiveCloseRate',AVG(CASE WHEN x.close>x.open THEN 1.0 ELSE 0.0 END))
+                     FROM (SELECT CAST(b.High AS REAL)-CAST(b.Low AS REAL) barRange,CAST(b.Volume AS REAL) volume,
+                                  CAST(b.Open AS REAL) open,CAST(b.Close AS REAL) close,
+                                  CASE WHEN CAST(b.Open AS REAL)=0 THEN 0 ELSE (CAST(b.Close AS REAL)-CAST(b.Open AS REAL))/CAST(b.Open AS REAL) END returnFraction
+                           FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
+                             AND b.CloseTimeUtc<json_extract(s.SampleJson,'$.EntryTimeUtc')
+                             AND strftime('%H:%M',b.CloseTimeUtc)=strftime('%H:%M',json_extract(s.SampleJson,'$.EntryTimeUtc'))
+                           ORDER BY b.CloseTimeUtc DESC LIMIT 40) x) seasonalityHistory
             FROM PatternTradeResearchSamples s JOIN UniversalMarketObservations o ON o.ObservationId=s.ObservationId
             WHERE s.RunId=$run AND s.NetR IS NOT NULL ORDER BY o.FormationTimeUtc,s.SampleId;
             """;command.Parameters.AddWithValue("$run",run.RunId);await using var reader=await command.ExecuteReaderAsync(token);
@@ -88,7 +98,7 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
             features["time.hourSin"]=(decimal)Math.Sin(2*Math.PI*minute/1440d);features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minute/1440d);
             features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)actionClock.DayOfWeek/7d);features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)actionClock.DayOfWeek/7d);
             features[$"context.session.{SessionSegment(actionClock.Hour)}"]=1m;features["context.session.progressUtcDay"]=minute/1440m;
-            PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(6)?null:reader.GetString(6),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),reader.IsDBNull(9)?null:reader.GetString(9));
+            PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(6)?null:reader.GetString(6),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),reader.IsDBNull(9)?null:reader.GetString(9),reader.IsDBNull(10)?null:reader.GetString(10));
             var labels=new Dictionary<string,decimal>{{"netR",sample.NetR.Value},{"grossR",sample.GrossR??sample.NetR.Value},
                 {"maximumFavorableExcursionR",sample.MaximumFavorableExcursionR??0},{"maximumAdverseExcursionR",sample.MaximumAdverseExcursionR??0},
                 {"profitable",sample.NetR>0?1m:0m}};

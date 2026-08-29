@@ -1,6 +1,6 @@
 # Point-in-time context features
 
-Version: `point-in-time-context-features-1.0.0`
+Version: `point-in-time-context-features-1.2.0`
 
 This layer converts market state known at a scenario's decision clock into research-only agent features. It is shared by the universal outcome dataset and the actionability outcome dataset so both training paths use the same missing-data and regime semantics.
 
@@ -20,6 +20,14 @@ All canonical-bar queries use `CloseTimeUtc <= DecisionTimeUtc` (or the observat
 Every example has explicit availability gates for latest canonical bar, five-bar prior close, twenty-bar context, order flow, Level II, options positioning, and market breadth. When a source is unavailable, its gate is zero and its measurements are omitted. A missing feed is never represented as a neutral market measurement.
 
 The bar-derived context snapshot likewise emits `SourceUnavailable` families for disconnected external sources, with a human-readable reason and no invented numeric values.
+
+## Historical same-clock seasonality
+
+Seasonality is now estimated only from earlier one-minute bars for the same instrument and UTC minute of day. The current decision bar is excluded (`CloseTimeUtc < DecisionTimeUtc`), the lookup is capped at the most recent 40 matching observations, and at least 10 prior observations are required. Until that minimum exists, `context.availability.canonical.seasonalityHistory` is zero and all historical-seasonality measurements are omitted.
+
+Eligible examples expose historical sample count, mean and mean-absolute return fraction, positive-close rate, directional bias, and current range/volume relative to the same-clock baseline. The same implementation feeds both universal outcome examples and actionability examples. An indexed `(instrument, timeframe, minute-of-day, close-time)` lookup keeps the point-in-time query bounded.
+
+Production dataset `AGDS-53BF02947F765FEB368D158107A5A1F9` contains 19,900 universal examples and 86 feature names, split chronologically into 13,928 train / 2,985 validation / 2,987 test. Historical same-clock measurements are genuinely available for 18,180 examples (91.3568%); the earlier 1,720 examples remain unavailable rather than being backfilled with future history. The dataset feature-audit route `/api/agent/research-datasets/{datasetId}/feature-coverage` reports present and non-zero coverage for any feature prefix, making source readiness measurable rather than inferred.
 
 ## First training result
 

@@ -49,5 +49,16 @@ public sealed class BarDerivedResearchContextEngineTests
         Assert.Equal(ContextFeatureAvailability.SourceUnavailable,stale.Families.Single(x=>x.FamilyId=="order-flow").Availability);
     }
 
+    [Fact]
+    public void SeasonalityUsesOnlyPriorSameClockBarsAndRequiresTenSamples()
+    {
+        var decision=new DateTime(2026,8,27,14,1,0,DateTimeKind.Utc);var bars=Enumerable.Range(1,12)
+            .Select(i=>Bar(i,decision.AddDays(-i).AddMinutes(-1),100+i*.01m,100+i)).ToArray();
+        var snapshot=new BarDerivedResearchContextEngine(new LegacyUtcTradingSessionService()).Build("MES","MESU6","1m",decision,bars);
+        var family=snapshot.Families.Single(x=>x.FamilyId=="seasonality");Assert.Equal("Available",family.CategoricalFeatures["historyStatus"]);
+        Assert.Equal(12,family.NumericFeatures["historySampleCount"]);Assert.Equal(12,family.SourceReferences.Count);
+        Assert.All(family.SourceReferences,x=>Assert.DoesNotContain("BAR-0",x));
+    }
+
     private static CanonicalBar Bar(int i,DateTime open,decimal close,decimal volume)=>new($"BAR-{i}",1,"MES","MESU6","MESU6","1m",open,open.AddMinutes(1),close-.1m,close+.2m,close-.2m,close,volume,true,"S",DateOnly.FromDateTime(open),"1","1",CorrectionState.Original,MarketDataQualityFlags.None,open.AddMinutes(1),$"H{i}");
 }

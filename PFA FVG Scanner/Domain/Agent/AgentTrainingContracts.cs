@@ -53,6 +53,12 @@ public sealed record GenericOutcomeDatasetManifest(
     IReadOnlyList<string> FeatureNames,IReadOnlyList<string> LabelNames,string ContentHash,
     bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
 
+public sealed record AgentDatasetFeatureCoverageItem(string FeatureName,int PresentCount,int NonZeroCount,
+    decimal PresentRate,decimal NonZeroRate);
+
+public sealed record AgentDatasetFeatureCoverage(string DatasetId,int ExampleCount,string? Prefix,
+    IReadOnlyList<AgentDatasetFeatureCoverageItem> Features);
+
 public sealed record AgentBaselineTrainingRequest(string DatasetId,
     string TargetName = "directionalCloseTicks");
 

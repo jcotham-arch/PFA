@@ -1122,6 +1122,8 @@ namespace PFA_FVG_Scanner.Data
                                   WHERE MigrationId='CANONICAL_RESEARCH_LOOKUP_1');
                 CREATE INDEX IF NOT EXISTS IX_CanonicalResolvedResearchBars_Instrument_Time
                     ON CanonicalResolvedResearchBars(InstrumentId,Timeframe,CloseTimeUtc);
+                CREATE INDEX IF NOT EXISTS IX_CanonicalResolvedResearchBars_SeasonalClock
+                    ON CanonicalResolvedResearchBars(InstrumentId,Timeframe,strftime('%H:%M',CloseTimeUtc),CloseTimeUtc);
                 INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
                 VALUES('CANONICAL_RESEARCH_LOOKUP_1',datetime('now'),
                     'Materialize resolved revision-one bars for point-in-time research feature lookup.');
