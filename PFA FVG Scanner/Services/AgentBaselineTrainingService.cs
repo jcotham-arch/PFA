@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-2.4.0";
+    public const string Version = "research-promotion-gate-2.5.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -30,6 +30,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var ridge = FitRidge(training, 1m);
         var ridgeBase = FitRidge(training,1m,name=>!IsResearchContextFeature(name));
         var ridgeContext = FitRidge(training,1m,IsResearchContextFeature);
+        var ridgeInteractions=FitInteractionRidge(training,8);
         var familyModels=ContextFamilies.ToDictionary(x=>x.Key,x=>FitRidge(training,1m,
             name=>!IsResearchContextFeature(name)||name.StartsWith(x.Value,StringComparison.Ordinal)),StringComparer.Ordinal);
         var boostedStumps = FitBoostedStumps(training, 25, 0.10m);
@@ -65,6 +66,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             ("ridge-base-only",ridgeBase.Predict),
             ("ridge-context-only",ridgeContext.Predict),
             ("ridge-linear", ridge.Predict),
+            ("ridge-context-interactions",ridgeInteractions.Predict),
             ("boosted-stumps-capped", boostedStumps.Predict)
         };
         var variantMetrics = variants.SelectMany(variant => new[] { "Validation", "Test" }.Select(split =>
@@ -99,7 +101,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             })).ToArray();
         var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
         var economicWalkForward=request.TargetName=="netR"?BuildEconomicWalkForwardMetrics(rows,15):[];
-        var artifacts=new[]{Artifact("ridge-linear",request.TargetName,ridge)};
+        var artifacts=new[]{Artifact("ridge-linear",request.TargetName,ridge),
+            Artifact("ridge-context-interactions",request.TargetName,ridgeInteractions)};
         var promotionGate = BuildPromotionGate(request.TargetName,variantMetrics, segmentMetrics, walkForwardMetrics,
             economicPolicyMetrics,economicWalkForward);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
@@ -131,12 +134,16 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
 
     public async Task<AgentResearchScore> ScoreAsync(string runId,DateTime featuresKnownAtUtc,
         IReadOnlyDictionary<string,decimal> features,CancellationToken token=default)
+        =>await ScoreAsync(runId,featuresKnownAtUtc,features,"ridge-linear",token);
+
+    public async Task<AgentResearchScore> ScoreAsync(string runId,DateTime featuresKnownAtUtc,
+        IReadOnlyDictionary<string,decimal> features,string variant,CancellationToken token=default)
     {
         var run=(await GetAllAsync(token)).FirstOrDefault(x=>x.RunId==runId)??throw new KeyNotFoundException("Agent baseline run was not found.");
-        var artifact=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant=="ridge-linear")??throw new InvalidOperationException("Run has no frozen ridge-linear artifact.");
+        var artifact=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant==variant)??throw new InvalidOperationException($"Run has no frozen '{variant}' artifact.");
         if(artifact.Coefficients.Count!=artifact.FeatureNames.Count+1)throw new InvalidOperationException("Frozen model artifact is malformed.");
         var prediction=artifact.Coefficients[0];for(var i=0;i<artifact.FeatureNames.Count;i++)prediction+=artifact.Coefficients[i+1]*
-            (features.GetValueOrDefault(artifact.FeatureNames[i])-artifact.Means[i])/artifact.Scales[i];
+            (FeatureValue(features,artifact.FeatureNames[i])-artifact.Means[i])/artifact.Scales[i];
         prediction=Round(prediction);return new(run.RunId,artifact.ArtifactId,run.TargetName,DateTime.UtcNow,
             Utc(featuresKnownAtUtc),prediction,prediction>0?"PredictedPositive":prediction<0?"PredictedNegative":"Neutral",artifact.ContentHash);
     }
@@ -203,24 +210,53 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     private static DateTime Parse(string value)=>DateTime.Parse(value,null,DateTimeStyles.RoundtripKind).ToUniversalTime();
 
     private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda,Func<string,bool>? include=null)
+        =>FitRidge(training,lambda,include,[]);
+
+    private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda,Func<string,bool>? include,
+        IReadOnlyList<string> additionalNames)
     {
         var names=training.SelectMany(x=>x.Features.Keys).Distinct(StringComparer.Ordinal)
-            .Where(name=>include?.Invoke(name)??true).Order().ToArray();
-        var means=names.Select(name=>training.Average(x=>x.Features.GetValueOrDefault(name))).ToArray();
+            .Where(name=>include?.Invoke(name)??true).Concat(additionalNames).Distinct(StringComparer.Ordinal).Order().ToArray();
+        var means=names.Select(name=>training.Average(x=>FeatureValue(x.Features,name))).ToArray();
         var scales=names.Select((name,index)=>
         {
-            var variance=training.Average(x=>{var delta=x.Features.GetValueOrDefault(name)-means[index];return delta*delta;});
+            var variance=training.Average(x=>{var delta=FeatureValue(x.Features,name)-means[index];return delta*delta;});
             var scale=(decimal)Math.Sqrt((double)variance);return scale==0?1m:scale;
         }).ToArray();
         var size=names.Length+1;var matrix=new decimal[size,size];var vector=new decimal[size];
         foreach(var row in training)
         {
             var x=new decimal[size];x[0]=1m;
-            for(var i=0;i<names.Length;i++)x[i+1]=(row.Features.GetValueOrDefault(names[i])-means[i])/scales[i];
+            for(var i=0;i<names.Length;i++)x[i+1]=(FeatureValue(row.Features,names[i])-means[i])/scales[i];
             for(var i=0;i<size;i++){vector[i]+=x[i]*row.Actual;for(var j=0;j<size;j++)matrix[i,j]+=x[i]*x[j];}
         }
         for(var i=1;i<size;i++)matrix[i,i]+=lambda;
         return new(names,means,scales,Solve(matrix,vector));
+    }
+
+    private static RidgeModel FitInteractionRidge(IReadOnlyList<Row> training,int selectedFeatureCount)
+    {
+        const int interactionTrainingCap=6000;
+        if(training.Count>interactionTrainingCap)training=Enumerable.Range(0,interactionTrainingCap)
+            .Select(index=>training[(int)((long)index*training.Count/interactionTrainingCap)]).ToArray();
+        var meanTarget=training.Average(x=>x.Actual);
+        var selected=training.SelectMany(x=>x.Features.Keys).Distinct(StringComparer.Ordinal)
+            .Where(name=>IsResearchContextFeature(name)||name.StartsWith("policy.",StringComparison.Ordinal)||
+                name.StartsWith("market.",StringComparison.Ordinal))
+            .Select(name=>new{Name=name,Signal=Math.Abs(training.Average(x=>(x.Features.GetValueOrDefault(name))*
+                (x.Actual-meanTarget)))})
+            .OrderByDescending(x=>x.Signal).ThenBy(x=>x.Name,StringComparer.Ordinal).Take(selectedFeatureCount)
+            .Select(x=>x.Name).ToArray();
+        var interactions=selected.SelectMany((left,index)=>selected.Skip(index+1)
+            .Select(right=>$"interaction::{left}::{right}")).ToArray();
+        return FitRidge(training,1m,null,interactions);
+    }
+
+    private static decimal FeatureValue(IReadOnlyDictionary<string,decimal> features,string name)
+    {
+        if(!name.StartsWith("interaction::",StringComparison.Ordinal))return features.GetValueOrDefault(name);
+        var parts=name[13..].Split("::",2,StringSplitOptions.None);
+        return parts.Length==2?features.GetValueOrDefault(parts[0])*features.GetValueOrDefault(parts[1]):0m;
     }
 
     private static decimal[] Solve(decimal[,] matrix,decimal[] vector)
@@ -378,7 +414,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     private sealed record RidgeModel(string[] Names,decimal[] Means,decimal[] Scales,decimal[] Coefficients)
     {
         public decimal Predict(Row row)
-        {var value=Coefficients[0];for(var i=0;i<Names.Length;i++)value+=Coefficients[i+1]*(row.Features.GetValueOrDefault(Names[i])-Means[i])/Scales[i];return value;}
+        {var value=Coefficients[0];for(var i=0;i<Names.Length;i++)value+=Coefficients[i+1]*(FeatureValue(row.Features,Names[i])-Means[i])/Scales[i];return value;}
     }
     private sealed record DecisionStump(string Feature,decimal Threshold,decimal LeftValue,decimal RightValue)
     {public decimal Predict(Row row)=>row.Features.GetValueOrDefault(Feature)<=Threshold?LeftValue:RightValue;}

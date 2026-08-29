@@ -95,8 +95,8 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.Equal(new[]{"Train","Validation","Test"},baseline.Metrics.Select(x=>x.Split));
         Assert.Equal(4,baseline.SegmentMetrics!.Count);
         Assert.All(baseline.SegmentMetrics,metric=>Assert.True(metric.SampleCount>0));
-        Assert.Equal(18,baseline.VariantMetrics!.Count);
-        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-base-only","ridge-context-only","ridge-linear","boosted-stumps-capped"},
+        Assert.Equal(20,baseline.VariantMetrics!.Count);
+        Assert.Equal(new[]{"zero","global-mean","instrument-mean","module-mean","instrument-module-direction-mean","ridge-base-only","ridge-context-only","ridge-linear","ridge-context-interactions","boosted-stumps-capped"},
             baseline.VariantMetrics.Select(x=>x.Variant).Distinct());
         Assert.Equal(3,baseline.WalkForwardMetrics!.Count);
         Assert.All(baseline.WalkForwardMetrics,metric=>
@@ -109,9 +109,15 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.NotEmpty(ablations);Assert.All(ablations,x=>Assert.True(x.TestSamples>0));
         var familyAblations=Assert.IsAssignableFrom<IReadOnlyList<AgentContextFamilyAblationMetric>>(baseline.ContextFamilyAblations);
         Assert.Equal(6,familyAblations.Count);Assert.Contains(familyAblations,x=>x.FamilyId=="seasonality");
-        var artifact=Assert.Single(baseline.ModelArtifacts!);Assert.Equal("ridge-linear",artifact.Variant);
+        Assert.Equal(2,baseline.ModelArtifacts!.Count);var artifact=baseline.ModelArtifacts.Single(x=>x.Variant=="ridge-linear");
+        var interactionArtifact=baseline.ModelArtifacts.Single(x=>x.Variant=="ridge-context-interactions");
+        Assert.Contains(interactionArtifact.FeatureNames,x=>x.StartsWith("interaction::",StringComparison.Ordinal));
         var score=await training.ScoreAsync(baseline.RunId,Now,new Dictionary<string,decimal>(),TestContext.Current.CancellationToken);
         Assert.Equal(artifact.ArtifactId,score.ArtifactId);Assert.False(score.CanActivateStrategy);Assert.False(score.CanRouteToRealBroker);
+        var interactionScore=await training.ScoreAsync(baseline.RunId,Now,
+            new Dictionary<string,decimal>{{"range",2m}},"ridge-context-interactions",TestContext.Current.CancellationToken);
+        Assert.Equal(interactionArtifact.ArtifactId,interactionScore.ArtifactId);
+        Assert.False(interactionScore.CanActivateStrategy);Assert.False(interactionScore.CanRouteToRealBroker);
         var sandboxReadiness=await new AgentSandboxPromotionReadinessService(training).GetAsync(TestContext.Current.CancellationToken);
         Assert.Equal("NoNetRRun",sandboxReadiness.Status);Assert.False(sandboxReadiness.CanCreateProspectiveSandbox);
         Assert.NotEmpty(baseline.PromotionGate.Reasons);Assert.False(baseline.CanActivateStrategy);

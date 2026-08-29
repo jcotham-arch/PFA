@@ -10,27 +10,33 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class ActionabilityDecisionPolicyService(PfaDatabase database)
 {
-    public const string Version="actionability-decision-policy-1.0.0";
+    public const string Version="actionability-decision-policy-1.1.0";
 
     public async Task<ActionabilityDecisionPolicyReport> AnalyzeAsync(int minimumSamples=100,CancellationToken token=default)
     {
         if(minimumSamples<20)throw new ArgumentOutOfRangeException(nameof(minimumSamples));
         await using var connection=database.CreateConnection();await connection.OpenAsync(token);
         var run=await LatestRun(connection,token)??throw new InvalidOperationException("No finalized net-R model run exists.");
-        var artifact=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant=="ridge-linear")
-            ??throw new InvalidOperationException("The latest net-R run has no frozen ridge-linear artifact.");
-        var rows=await Rows(connection,run.DatasetId,artifact,token);
-        var validation=rows.Where(x=>x.Split=="Validation").OrderBy(x=>x.Score).ToArray();
-        var test=rows.Where(x=>x.Split=="Test").ToArray();
-        if(validation.Length==0||test.Length==0)throw new InvalidOperationException("The net-R dataset requires validation and test examples.");
-        var thresholds=Enumerable.Range(2,18).Select(x=>x*5).Select(percentile=>
-            validation[(int)Math.Floor((validation.Length-1)*(percentile/100m))].Score).Distinct().ToArray();
-        var candidates=thresholds.Select(threshold=>(Threshold:threshold,Metric:Metric("Validation",validation,threshold)))
-            .Where(x=>x.Metric.Samples>=minimumSamples&&x.Metric.MeanNetR>0&&x.Metric.ProfitFactor>1)
-            .OrderByDescending(x=>x.Metric.MeanNetR).ThenByDescending(x=>x.Metric.ProfitFactor).Take(10)
-            .Select(x=>Candidate(run,artifact,x.Threshold,x.Metric,test,minimumSamples)).ToArray();
-        return new(Version,run.DatasetId,run.DatasetContentHash,run.RunId,artifact.ArtifactId,validation.Length,test.Length,
-            thresholds.Length,candidates,DateTime.UtcNow);
+        var artifacts=run.ModelArtifacts?.Where(x=>x.TargetName=="netR").ToArray()??[];
+        if(artifacts.Length==0)throw new InvalidOperationException("The latest net-R run has no frozen model artifacts.");
+        var candidates=new List<ActionabilityDecisionPolicyCandidate>();var thresholdsTested=0;var validationExamples=0;var testExamples=0;
+        foreach(var artifact in artifacts)
+        {
+            var rows=await Rows(connection,run.DatasetId,artifact,token);
+            var validation=rows.Where(x=>x.Split=="Validation").OrderBy(x=>x.Score).ToArray();
+            var test=rows.Where(x=>x.Split=="Test").ToArray();
+            if(validation.Length==0||test.Length==0)throw new InvalidOperationException("The net-R dataset requires validation and test examples.");
+            validationExamples=Math.Max(validationExamples,validation.Length);testExamples=Math.Max(testExamples,test.Length);
+            var thresholds=Enumerable.Range(2,18).Select(x=>x*5).Select(percentile=>
+                validation[(int)Math.Floor((validation.Length-1)*(percentile/100m))].Score).Distinct().ToArray();
+            thresholdsTested+=thresholds.Length;
+            candidates.AddRange(thresholds.Select(threshold=>(Threshold:threshold,Metric:Metric("Validation",validation,threshold)))
+                .Where(x=>x.Metric.Samples>=minimumSamples&&x.Metric.MeanNetR>0&&x.Metric.ProfitFactor>1)
+                .Select(x=>Candidate(run,artifact,x.Threshold,x.Metric,test,minimumSamples)));
+        }
+        var ranked=candidates.OrderByDescending(x=>x.Validation.MeanNetR).ThenByDescending(x=>x.Validation.ProfitFactor).Take(10).ToArray();
+        return new(Version,run.DatasetId,run.DatasetContentHash,run.RunId,string.Join(',',artifacts.Select(x=>x.ArtifactId)),
+            validationExamples,testExamples,thresholdsTested,ranked,DateTime.UtcNow);
     }
 
     private static ActionabilityDecisionPolicyCandidate Candidate(AgentBaselineRun run,AgentLinearModelArtifact artifact,
@@ -59,7 +65,9 @@ public sealed class ActionabilityDecisionPolicyService(PfaDatabase database)
     {await using var command=connection.CreateCommand();command.CommandText="SELECT RunJson FROM AgentBaselineRuns WHERE TargetName='netR' ORDER BY TrainedAtUtc DESC LIMIT 1";var json=Convert.ToString(await command.ExecuteScalarAsync(token));return string.IsNullOrWhiteSpace(json)?null:JsonSerializer.Deserialize<AgentBaselineRun>(json);}
 
     private static async Task<Row[]> Rows(SqliteConnection connection,string dataset,AgentLinearModelArtifact artifact,CancellationToken token)
-    {var output=new List<Row>();await using var command=connection.CreateCommand();command.CommandText="SELECT Split,FeatureJson,LabelJson FROM AgentResearchExamples WHERE DatasetId=$id AND Split IN ('Validation','Test') ORDER BY EventTimeUtc,ExampleId";command.Parameters.AddWithValue("$id",dataset);await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token)){var features=JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(1))??[];var labels=JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(2))??[];if(!labels.TryGetValue("netR",out var netR))continue;var score=artifact.Coefficients[0];for(var i=0;i<artifact.FeatureNames.Count;i++)score+=artifact.Coefficients[i+1]*(features.GetValueOrDefault(artifact.FeatureNames[i])-artifact.Means[i])/artifact.Scales[i];output.Add(new(reader.GetString(0),netR,score));}return output.ToArray();}
+    {var output=new List<Row>();await using var command=connection.CreateCommand();command.CommandText="SELECT Split,FeatureJson,LabelJson FROM AgentResearchExamples WHERE DatasetId=$id AND Split IN ('Validation','Test') ORDER BY EventTimeUtc,ExampleId";command.Parameters.AddWithValue("$id",dataset);await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token)){var features=JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(1))??[];var labels=JsonSerializer.Deserialize<Dictionary<string,decimal>>(reader.GetString(2))??[];if(!labels.TryGetValue("netR",out var netR))continue;var score=artifact.Coefficients[0];for(var i=0;i<artifact.FeatureNames.Count;i++)score+=artifact.Coefficients[i+1]*(FeatureValue(features,artifact.FeatureNames[i])-artifact.Means[i])/artifact.Scales[i];output.Add(new(reader.GetString(0),netR,score));}return output.ToArray();}
+    private static decimal FeatureValue(IReadOnlyDictionary<string,decimal> features,string name)
+    {if(!name.StartsWith("interaction::",StringComparison.Ordinal))return features.GetValueOrDefault(name);var parts=name[13..].Split("::",2,StringSplitOptions.None);return parts.Length==2?features.GetValueOrDefault(parts[0])*features.GetValueOrDefault(parts[1]):0m;}
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
     private static string Hash(string value)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private sealed record Row(string Split,decimal NetR,decimal Score);
