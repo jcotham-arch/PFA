@@ -19,7 +19,7 @@ public sealed class MarketPatternModuleRegistry : IMarketPatternModuleRegistry
         Planned("session-reference", "Session References", "Prior session levels, opening ranges and session-transition events."),
         Planned("volume-volatility", "Volume & Volatility", "Volume anomalies, compression, expansion and regime context."),
         Planned("trend-continuation", "Trend Continuation", "Established directional structure, continuation quality, trailing invalidation and trend-bend evidence."),
-        Planned("pullback-continuation", "Pullback / Retracement", "Counter-trend retracement depth, support or resistance response, reclaim and continuation or failure."),
+        Active("pullback-continuation", "Pullback / Retracement", "Impulse, controlled counter-trend retracement, preserved origin and completed reclaim continuation."),
         Planned("mean-reversion", "Mean Reversion", "Point-in-time deviation, exhaustion, rejection and return-to-balance hypotheses conditioned on regime.")
     ];
 

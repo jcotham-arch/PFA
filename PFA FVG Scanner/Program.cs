@@ -108,6 +108,7 @@ builder.Services.AddSingleton<LiquiditySweepPatternModule>();
 builder.Services.AddSingleton<RangeBreakoutPatternModule>();
 builder.Services.AddSingleton<FailedBreakoutPatternModule>();
 builder.Services.AddSingleton<MarketStructurePatternModule>();
+builder.Services.AddSingleton<PullbackContinuationPatternModule>();
 builder.Services.AddSingleton<MarketChartService>();
 builder.Services.AddSingleton<DailyMarketDiscoveryService>();
 builder.Services.AddSingleton<ActionabilityEvidenceService>();

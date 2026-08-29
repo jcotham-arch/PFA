@@ -27,7 +27,8 @@ public sealed class PatternSequenceReplayService(
     LiquiditySweepPatternModule liquiditySweep,
     RangeBreakoutPatternModule rangeBreakout,
     FailedBreakoutPatternModule failedBreakout,
-    MarketStructurePatternModule marketStructure)
+    MarketStructurePatternModule marketStructure,
+    PullbackContinuationPatternModule pullbackContinuation)
 {
     private static readonly MarketDataQualityFlags Rejected = MarketDataQualityFlags.Incomplete |
         MarketDataQualityFlags.InvalidOhlc | MarketDataQualityFlags.UnresolvedInstrument |
@@ -45,7 +46,7 @@ public sealed class PatternSequenceReplayService(
         if (endUtc.HasValue) bars = bars.Where(x => x.OpenTimeUtc < endUtc.Value.ToUniversalTime()).ToArray();
         if (bars.Count == 0)
             bars = await GetLegacyBarsAsync(instrumentId, contractId, timeframe, startUtc, endUtc, cancellationToken);
-        var detectors = new IMarketPatternDetector[] { fvg, liquiditySweep, rangeBreakout, failedBreakout, marketStructure };
+        var detectors = new IMarketPatternDetector[] { fvg, liquiditySweep, rangeBreakout, failedBreakout, marketStructure, pullbackContinuation };
         var detected = new Dictionary<string, UniversalMarketObservation>(StringComparer.Ordinal);
         var counts = detectors.ToDictionary(x => x.ModuleId, _ => 0, StringComparer.OrdinalIgnoreCase);
 

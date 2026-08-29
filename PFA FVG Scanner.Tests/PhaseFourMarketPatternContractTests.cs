@@ -57,9 +57,9 @@ public sealed class PhaseFourMarketPatternContractTests
     public void ModuleInventoryDocumentsLegacyBoundaryWithoutWrappingItEarly()
     {
         var modules = new MarketPatternModuleRegistry().GetAll();
-        Assert.Equal(new[] { "fvg", "liquidity-sweep", "market-structure", "range-breakout", "failed-breakout" },
+        Assert.Equal(new[] { "fvg", "liquidity-sweep", "market-structure", "range-breakout", "failed-breakout", "pullback-continuation" },
             modules.Where(x => x.Version != "definition-pending").Select(x => x.ModuleId));
-        Assert.Equal(6, modules.Count(x => x.Version == "definition-pending"));
+        Assert.Equal(5, modules.Count(x => x.Version == "definition-pending"));
     }
 
     [Fact]
@@ -75,6 +75,23 @@ public sealed class PhaseFourMarketPatternContractTests
         Assert.Equal(PatternDirection.Bullish,observation.Direction);Assert.Equal(clock,observation.KnownAtUtc);
         var geometry=Assert.IsType<StructureProgressionGeometry>(observation.Geometry);
         Assert.Equal(99,geometry.RangeLower);Assert.Equal(104,geometry.RangeUpper);
+    }
+
+    [Fact]
+    public void PullbackContinuationRequiresImpulseControlledRetracementAndCompletedReclaim()
+    {
+        var bars=new[]
+        {
+            Bar("P1",0,100,102,99,101.5m),Bar("P2",5,101.5m,104,101,103.5m),Bar("P3",10,103.5m,106,103,105.5m),
+            Bar("P4",15,105.5m,105.75m,103.5m,104.5m),Bar("P5",20,104.5m,105,102.5m,103.5m),Bar("P6",25,103.5m,106.25m,103.25m,106m)
+        };
+        var detector=new PullbackContinuationPatternModule();var clock=bars[^1].CloseTimeUtc;
+        var result=detector.Detect(new("MES","MESU6","5m",clock,bars,MarketDataQualityFlags.None));
+        var observation=Assert.Single(result.Observations);Assert.Equal("BullishPullbackContinuation",observation.PatternType);
+        Assert.Equal(PatternDirection.Bullish,observation.Direction);Assert.Equal(clock,observation.KnownAtUtc);
+        var geometry=Assert.IsType<PullbackContinuationGeometry>(observation.Geometry);
+        Assert.Equal(102.5m,geometry.PullbackExtreme);Assert.InRange(geometry.RetracementFraction,.49m,.51m);
+        Assert.Equal(105.75m,geometry.ReclaimLevel);
     }
 
     [Theory]

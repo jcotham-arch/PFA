@@ -103,6 +103,14 @@ Zero definitions pass the development gate of positive mean net R and profit fac
 
 This result rejects broad three-bar structure as a standalone entry signal under the tested execution policies. It does not reject structure as context. The next experiment must require a more specific event chain such as impulse, controlled retracement, level reclaim, and continuation confirmation.
 
+## MES pullback-continuation pilot V1.0
+
+The `pullback-continuation` module requires six completed bars: a three-bar directional impulse, a two-bar counter-trend retracement between 20% and 80% of the impulse that preserves the impulse origin, and a completed continuation bar that reclaims the pullback boundary. The first five-minute MES replay finds 191 qualifying observations among 17,802 bars.
+
+Run `PTR-CA07DA1F8082F203726BCBFA1560F5C2` evaluates 300 definitions and 57,300 immutable samples. It compares three entry clocks, a pullback-extreme structural stop, targets from 0.5R through 3R, 5/15/30/60-minute holds, five exit policies, and estimated one-tick round-trip cost. Zero definitions meet the development evidence gate requiring positive mean net R, profit factor above one, at least 60 resolved training trades, and at least 15 resolved validation trades.
+
+The leading development row uses directional-confirmation entry, a 0.5R target, and a 60-minute hold. It is slightly positive in training (+0.014153R, profit factor 1.051319) and validation (+0.044039R, profit factor 1.154996), but has only 43 and 11 resolved samples respectively. It is therefore an underpowered clue, not a candidate. Its already-computed test result is sharply negative and must not be used for tuning. More chronologically distinct MES history or a newly versioned contextual definition is required before another blind evaluation.
+
 ## Next research work
 
 1. Add entry variants: reclaim retest, boundary limit, and delayed confirmation.
