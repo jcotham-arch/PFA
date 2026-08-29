@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-1.8.0";
+    public const string Version = "research-promotion-gate-1.9.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -28,10 +28,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var moduleMeans = training.GroupBy(x => x.ModuleId, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Average(y => y.Actual), StringComparer.Ordinal);
         var ridge = FitRidge(training, 1m);
-        var ridgeBase = FitRidge(training,1m,name=>!name.StartsWith("context.",StringComparison.Ordinal)&&
-            !name.StartsWith("time.",StringComparison.Ordinal));
-        var ridgeContext = FitRidge(training,1m,name=>name.StartsWith("context.",StringComparison.Ordinal)||
-            name.StartsWith("time.",StringComparison.Ordinal));
+        var ridgeBase = FitRidge(training,1m,name=>!IsResearchContextFeature(name));
+        var ridgeContext = FitRidge(training,1m,IsResearchContextFeature);
         var boostedStumps = FitBoostedStumps(training, 25, 0.10m);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
         AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population, Func<Row,decimal> predictor)
@@ -157,6 +155,12 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     }
 
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
+    private static bool IsResearchContextFeature(string name)=>name.StartsWith("time.",StringComparison.Ordinal)||
+        name.StartsWith("context.session.",StringComparison.Ordinal)||
+        name.StartsWith("context.volatility.",StringComparison.Ordinal)||
+        name.StartsWith("context.volume.",StringComparison.Ordinal)||
+        name.StartsWith("context.trend.",StringComparison.Ordinal)||
+        name.StartsWith("context.momentum.",StringComparison.Ordinal);
     private static DateTime Parse(string value)=>DateTime.Parse(value,null,DateTimeStyles.RoundtripKind).ToUniversalTime();
 
     private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda,Func<string,bool>? include=null)
