@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-1.7.0";
+    public const string Version = "research-promotion-gate-1.8.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -73,16 +73,29 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             return new AgentBaselineVariantMetric(variant.Name, split, metric.SampleCount, metric.MeanAbsoluteError,
                 metric.RootMeanSquaredError, metric.DirectionalAccuracy);
         })).ToArray();
+        var contextAblations=rows.Select(x=>x.ModuleId).Distinct(StringComparer.Ordinal).Order()
+            .Select(module=>
+            {
+                var population=rows.Where(x=>x.Split=="Test"&&x.ModuleId==module).ToArray();
+                var baseMetric=Evaluate("Test",population,ridgeBase.Predict);
+                var contextMetric=Evaluate("Test",population,ridgeContext.Predict);
+                var combinedMetric=Evaluate("Test",population,ridge.Predict);
+                return new AgentContextAblationMetric(module,population.Length,baseMetric.MeanAbsoluteError,
+                    contextMetric.MeanAbsoluteError,combinedMetric.MeanAbsoluteError,baseMetric.DirectionalAccuracy,
+                    contextMetric.DirectionalAccuracy,combinedMetric.DirectionalAccuracy,
+                    Round(combinedMetric.DirectionalAccuracy-baseMetric.DirectionalAccuracy));
+            }).ToArray();
         var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
         var promotionGate = BuildPromotionGate(variantMetrics, segmentMetrics, walkForwardMetrics);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
             Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
-            VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate });
+            VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate,
+            ContextAblations=contextAblations });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
             SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics,
-            PromotionGate:promotionGate);
+            PromotionGate:promotionGate,ContextAblations:contextAblations);
         await PersistAsync(run, token);
         return run;
     }

@@ -105,6 +105,8 @@ public sealed class ProductModuleAndAgentTrainingTests
             Assert.True(metric.ValidationSamples>0);Assert.True(metric.ValidationStartUtc<=metric.ValidationEndUtc);
         });
         Assert.NotNull(baseline.PromotionGate);Assert.Equal("Rejected",baseline.PromotionGate.Status);
+        var ablations=Assert.IsAssignableFrom<IReadOnlyList<AgentContextAblationMetric>>(baseline.ContextAblations);
+        Assert.NotEmpty(ablations);Assert.All(ablations,x=>Assert.True(x.TestSamples>0));
         Assert.NotEmpty(baseline.PromotionGate.Reasons);Assert.False(baseline.CanActivateStrategy);
         Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
         Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));
