@@ -130,6 +130,7 @@ builder.Services.AddSingleton<AgentTrainingDatasetBuilder>();
 builder.Services.AddSingleton<GenericOutcomeDatasetService>();
 builder.Services.AddSingleton<ActionabilityOutcomeDatasetService>();
 builder.Services.AddSingleton<ActionabilitySegmentResearchService>();
+builder.Services.AddSingleton<ActionabilityDecisionPolicyService>();
 builder.Services.AddSingleton<AgentBaselineTrainingService>();
 builder.Services.AddSingleton<AgentTrainingReadinessService>();
 builder.Services.AddSingleton<AgentSandboxPromotionReadinessService>();
