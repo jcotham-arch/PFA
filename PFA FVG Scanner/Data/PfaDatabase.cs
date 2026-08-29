@@ -61,6 +61,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateCertificationCampaignTablesAsync(connection);
             await CreateAgentResearchDatasetTablesAsync(connection);
             await CreateAgentBaselineTablesAsync(connection);
+            await CreateAgentHurdleTablesAsync(connection);
             await CreatePatternTradeResearchTablesAsync(connection);
             await CreateSequenceTradeResearchTablesAsync(connection);
 
@@ -173,6 +174,26 @@ namespace PFA_FVG_Scanner.Data
                     BEGIN SELECT RAISE(ABORT,'Agent baseline runs are immutable'); END;
                 """;
             await ExecuteAsync(connection, sql);
+        }
+
+        private static async Task CreateAgentHurdleTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS AgentHurdleRuns
+                (RunId TEXT PRIMARY KEY,ModelVersion TEXT NOT NULL,DatasetId TEXT NOT NULL,DatasetContentHash TEXT NOT NULL,
+                 TrainedAtUtc TEXT NOT NULL,ContentHash TEXT NOT NULL,RunJson TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 FOREIGN KEY(DatasetId) REFERENCES AgentResearchDatasets(DatasetId));
+                CREATE INDEX IF NOT EXISTS IX_AgentHurdleRuns_Dataset ON AgentHurdleRuns(DatasetId,TrainedAtUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_AgentHurdleRuns_NoUpdate BEFORE UPDATE ON AgentHurdleRuns
+                    BEGIN SELECT RAISE(ABORT,'Agent hurdle runs are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_AgentHurdleRuns_NoDelete BEFORE DELETE ON AgentHurdleRuns
+                    BEGIN SELECT RAISE(ABORT,'Agent hurdle runs are immutable');END;
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('AGENT_HURDLE_RUNS_V1',datetime('now'),'Add immutable decomposed-outcome hurdle model runs.');
+                """;
+            await ExecuteAsync(connection,sql);
         }
 
         private static async Task MigrateUniversalOutcomeMetricIdentityAsync(SqliteConnection connection)
