@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-2.2.0";
+    public const string Version = "research-promotion-gate-2.3.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -98,18 +98,21 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
                     familyMetric.DirectionalAccuracy,Round(familyMetric.DirectionalAccuracy-baseMetric.DirectionalAccuracy));
             })).ToArray();
         var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
-        var promotionGate = BuildPromotionGate(request.TargetName,variantMetrics, segmentMetrics, walkForwardMetrics,economicPolicyMetrics);
+        var economicWalkForward=request.TargetName=="netR"?BuildEconomicWalkForwardMetrics(rows,15):[];
+        var promotionGate = BuildPromotionGate(request.TargetName,variantMetrics, segmentMetrics, walkForwardMetrics,
+            economicPolicyMetrics,economicWalkForward);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
             Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
             VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate,
             ContextAblations=contextAblations,ContextFamilyAblations=contextFamilyAblations,
-            EconomicPolicyMetrics=economicPolicyMetrics });
+            EconomicPolicyMetrics=economicPolicyMetrics,EconomicWalkForwardMetrics=economicWalkForward });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
             SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics,
             PromotionGate:promotionGate,ContextAblations:contextAblations,
             ContextFamilyAblations:contextFamilyAblations,EconomicPolicyMetrics:economicPolicyMetrics);
+        run=run with{EconomicWalkForwardMetrics=economicWalkForward};
         await PersistAsync(run, token);
         return run;
     }
@@ -254,10 +257,11 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
 
     private static AgentResearchPromotionGate BuildPromotionGate(string target,
         IReadOnlyList<AgentBaselineVariantMetric> variants,IReadOnlyList<AgentBaselineSegmentMetric> segments,
-        IReadOnlyList<AgentWalkForwardMetric> folds,IReadOnlyList<AgentEconomicPolicyMetric> economic)
+        IReadOnlyList<AgentWalkForwardMetric> folds,IReadOnlyList<AgentEconomicPolicyMetric> economic,
+        IReadOnlyList<AgentEconomicWalkForwardMetric> economicFolds)
     {
         var candidates=new[]{"instrument-module-direction-mean","ridge-linear","boosted-stumps-capped"};
-        if(target=="netR")return BuildEconomicPromotionGate(variants,segments,economic,candidates);
+        if(target=="netR")return BuildEconomicPromotionGate(variants,segments,economic,economicFolds,candidates);
         var candidate=variants.Where(x=>x.Split=="Validation"&&candidates.Contains(x.Variant,StringComparer.Ordinal))
             .OrderBy(x=>x.MeanAbsoluteError).ThenByDescending(x=>x.DirectionalAccuracy).First();
         var test=variants.Single(x=>x.Variant==candidate.Variant&&x.Split=="Test");
@@ -276,7 +280,8 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     }
 
     private static AgentResearchPromotionGate BuildEconomicPromotionGate(IReadOnlyList<AgentBaselineVariantMetric> variants,
-        IReadOnlyList<AgentBaselineSegmentMetric> segments,IReadOnlyList<AgentEconomicPolicyMetric> economic,string[] candidates)
+        IReadOnlyList<AgentBaselineSegmentMetric> segments,IReadOnlyList<AgentEconomicPolicyMetric> economic,
+        IReadOnlyList<AgentEconomicWalkForwardMetric> economicFolds,string[] candidates)
     {
         var validation=economic.Where(x=>x.Split=="Validation"&&candidates.Contains(x.Variant,StringComparer.Ordinal)&&x.SelectedSamples>=100)
             .OrderByDescending(x=>x.MeanNetR).ThenByDescending(x=>x.ProfitFactor).FirstOrDefault();
@@ -286,10 +291,11 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         if(test.SelectedSamples<100)reasons.Add("The predicted-positive untouched test policy has fewer than 100 trades.");
         if(test.MeanNetR<=0)reasons.Add("Predicted-positive untouched test trades have non-positive expectancy.");
         if(test.ProfitFactor<=1)reasons.Add("Predicted-positive untouched test trades have profit factor at or below 1.0.");
-        reasons.Add("Economic walk-forward stability has not yet been established for the selected policy.");
+        var stable=economicFolds.Count>=3&&economicFolds.All(x=>x.SelectedSamples>=100&&x.MeanNetR>0&&x.ProfitFactor>1);
+        if(!stable)reasons.Add("One or more economic walk-forward folds lacks 100 trades, positive expectancy, or profit factor above 1.0.");
         var coverage=segments.Where(x=>x.Split=="Test").All(x=>x.SampleCount>=50);
         return new(candidate,reasons.Count==0?"EligibleForResearchReview":"Rejected",candidateTest.MeanAbsoluteError<global.MeanAbsoluteError,
-            false,false,coverage,reasons);
+            false,stable,coverage,reasons);
     }
 
     private static AgentEconomicPolicyMetric EconomicPolicy(string variant,string split,IReadOnlyList<Row> rows,Func<Row,decimal> predictor)
@@ -299,6 +305,22 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         foreach(var result in selected){equity+=result;peak=Math.Max(peak,equity);drawdown=Math.Max(drawdown,peak-equity);}
         return new(variant,split,selected.Length,Round(selected.Average()),Round(selected.Count(x=>x>0)/(decimal)selected.Length),
             grossLoss==0?decimal.MaxValue:Round(grossWins/grossLoss),Round(drawdown));
+    }
+
+    private static IReadOnlyList<AgentEconomicWalkForwardMetric> BuildEconomicWalkForwardMetrics(IReadOnlyList<Row> rows,int embargoMinutes)
+    {
+        var development=rows.Where(x=>x.Split is "Train" or "Validation").OrderBy(x=>x.EventTimeUtc).ToArray();
+        var output=new List<AgentEconomicWalkForwardMetric>();
+        for(var fold=0;fold<3;fold++)
+        {
+            var start=(int)Math.Floor(development.Length*(0.70m+fold*.10m));var end=fold==2?development.Length:(int)Math.Floor(development.Length*(.80m+fold*.10m));
+            if(start>=end)continue;var validation=development[start..end];var cutoff=validation[0].EventTimeUtc.AddMinutes(-embargoMinutes);
+            var training=development[..start].Where(x=>x.OutcomeKnownAtUtc<=cutoff).ToArray();if(training.Length==0)continue;
+            var model=FitRidge(training,1m);var metric=EconomicPolicy("ridge-linear",$"Fold{fold+1}",validation,model.Predict);
+            output.Add(new(fold+1,embargoMinutes,training.Length,validation.Length,metric.SelectedSamples,
+                validation[0].EventTimeUtc,validation[^1].EventTimeUtc,metric.MeanNetR,metric.WinRate,metric.ProfitFactor,metric.MaximumDrawdownR));
+        }
+        return output;
     }
 
     private static IReadOnlyList<AgentWalkForwardMetric> BuildWalkForwardMetrics(IReadOnlyList<Row> rows,int embargoMinutes)

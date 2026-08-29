@@ -77,6 +77,10 @@ public sealed record AgentContextFamilyAblationMetric(string ModuleId,string Fam
 public sealed record AgentEconomicPolicyMetric(string Variant,string Split,int SelectedSamples,
     decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR);
 
+public sealed record AgentEconomicWalkForwardMetric(int Fold,int EmbargoMinutes,int TrainingSamples,
+    int ValidationSamples,int SelectedSamples,DateTime ValidationStartUtc,DateTime ValidationEndUtc,
+    decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR);
+
 public sealed record AgentWalkForwardMetric(int Fold,int EmbargoMinutes,int TrainingSamples,
     int ValidationSamples,DateTime ValidationStartUtc,DateTime ValidationEndUtc,
     decimal MeanAbsoluteError,decimal RootMeanSquaredError,decimal DirectionalAccuracy);
@@ -94,4 +98,5 @@ public sealed record AgentBaselineRun(string RunId,string ModelVersion,string Da
     AgentResearchPromotionGate? PromotionGate=null,
     IReadOnlyList<AgentContextAblationMetric>? ContextAblations=null,
     IReadOnlyList<AgentContextFamilyAblationMetric>? ContextFamilyAblations=null,
-    IReadOnlyList<AgentEconomicPolicyMetric>? EconomicPolicyMetrics=null);
+    IReadOnlyList<AgentEconomicPolicyMetric>? EconomicPolicyMetrics=null,
+    IReadOnlyList<AgentEconomicWalkForwardMetric>? EconomicWalkForwardMetrics=null);
