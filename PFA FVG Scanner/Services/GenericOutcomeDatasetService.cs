@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.3.0";
+    public const string Version = "generic-outcome-dataset-1.4.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -80,7 +80,17 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
                     ORDER BY b.CloseTimeUtc DESC LIMIT 1) latestBar,
                    (SELECT b.Close FROM CanonicalResolvedResearchBars b
                     WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m' AND b.CloseTimeUtc<=o.KnownAtUtc
-                    ORDER BY b.CloseTimeUtc DESC LIMIT 1 OFFSET 5) priorClose
+                    ORDER BY b.CloseTimeUtc DESC LIMIT 1 OFFSET 5) priorClose,
+                   (SELECT json_object(
+                        'meanRange20',AVG(x.barRange),'meanVolume20',AVG(x.volume),
+                        'meanBody20',AVG(x.body),'high20',MAX(x.high),'low20',MIN(x.low))
+                    FROM (SELECT CAST(b.High AS REAL)-CAST(b.Low AS REAL) barRange,
+                                 CAST(b.Volume AS REAL) volume,
+                                 ABS(CAST(b.Close AS REAL)-CAST(b.Open AS REAL)) body,
+                                 CAST(b.High AS REAL) high,CAST(b.Low AS REAL) low
+                          FROM CanonicalResolvedResearchBars b
+                          WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m' AND b.CloseTimeUtc<=o.KnownAtUtc
+                          ORDER BY b.CloseTimeUtc DESC LIMIT 20) x) context20
             FROM UniversalMarketObservations o
             JOIN UniversalMarketOutcomes u ON u.ObservationId=o.ObservationId
             JOIN UniversalOutcomeMetrics close ON close.OutcomeId=u.OutcomeId
@@ -116,8 +126,13 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minuteOfDay/1440d);
             features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)formation.DayOfWeek/7d);
             features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)formation.DayOfWeek/7d);
+            features["time.monthSin"]=(decimal)Math.Sin(2*Math.PI*(formation.Month-1)/12d);
+            features["time.monthCos"]=(decimal)Math.Cos(2*Math.PI*(formation.Month-1)/12d);
+            features[$"context.session.{SessionSegment(known.Hour)}"]=1m;
+            features["context.session.progressUtcDay"]=minuteOfDay/1440m;
             AddMarketFeatures(features,reader.IsDBNull(19)?null:reader.GetString(19),
                 reader.IsDBNull(20)?null:reader.GetString(20));
+            AddContext20Features(features,reader.IsDBNull(21)?null:reader.GetString(21));
             var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["directionalCloseTicks"] = Decimal(reader.GetString(16)),
@@ -236,6 +251,26 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
         if(decimal.TryParse(priorCloseText,NumberStyles.Number,CultureInfo.InvariantCulture,out var prior)&&prior!=0)
             features["market.return5Fraction"]=(close-prior)/prior;
     }
+
+    private static void AddContext20Features(Dictionary<string,decimal> features,string? json)
+    {
+        if(string.IsNullOrWhiteSpace(json))return;using var document=JsonDocument.Parse(json);var root=document.RootElement;
+        decimal Read(string name)=>root.TryGetProperty(name,out var node)&&node.ValueKind==JsonValueKind.Number&&node.TryGetDecimal(out var value)?value:0m;
+        var range=Read("meanRange20");var volume=Read("meanVolume20");var body=Read("meanBody20");
+        var high=Read("high20");var low=Read("low20");
+        features["context.volatility.meanRange20"]=range;
+        features["context.volume.meanVolume20"]=volume;
+        features["context.trend.meanBodyToRange20"]=range==0?0:body/range;
+        features["context.trend.rangeWidth20"]=high-low;
+        if(features.TryGetValue("market.volumeLog",out var volumeLog)&&volume>0)
+            features["context.volume.relativeVolumeLog"]=(decimal)Math.Exp((double)volumeLog)-1m>0?
+                ((decimal)Math.Exp((double)volumeLog)-1m)/volume:0m;
+        if(features.TryGetValue("market.return5Fraction",out var momentum))
+            features["context.momentum.return5Fraction"]=momentum;
+    }
+
+    private static string SessionSegment(int hour)=>hour switch
+    {<8=>"Overnight",<13=>"Premarket",<16=>"RegularMorning",<18=>"RegularMidday",<20=>"RegularAfternoon",_=>"PostMarket"};
 
     private static string HashExample(GenericOutcomeResearchExample example) => AgentTrainingDatasetBuilder.Hash(
         JsonSerializer.Serialize(new { example.ExampleId,example.ObservationId,example.OutcomeId,example.Split,
