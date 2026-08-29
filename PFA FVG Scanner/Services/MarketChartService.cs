@@ -48,6 +48,23 @@ public sealed class MarketChartService
         return new(normalizedSymbol, timeframe.ToLowerInvariant(), limit, bars, fvgs, coverage);
     }
 
+    public async Task<MarketChartSnapshot> GetFocusedAsync(string symbol,string timeframe,int limit,DateTime focusUtc,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSymbol=symbol.Trim().ToUpperInvariant();
+        if(!Supported.TryGetValue(timeframe,out var minutes))
+            throw new ArgumentException("Supported timeframes are 1m, 5m, 15m and 1h.",nameof(timeframe));
+        limit=Math.Clamp(limit,20,300);focusUtc=focusUtc.ToUniversalTime();
+        var halfWindow=TimeSpan.FromMinutes(Math.Max(limit*minutes/2+minutes,minutes*10));
+        var source=(await _candles.GetRangeAsync(normalizedSymbol,"1m",focusUtc-halfWindow,focusUtc+halfWindow,cancellationToken))
+            .OrderBy(x=>x.OpenTimeUtc).ToArray();
+        var bars=Aggregate(source,minutes).OrderBy(x=>Math.Abs((x.OpenTimeUtc-focusUtc).Ticks)).Take(limit)
+            .OrderBy(x=>x.OpenTimeUtc).ToArray();
+        var fvgs=(await _observations.GetRecentFvgsAsync(100,cancellationToken)).ToArray();
+        var coverage=await GetCoverageAsync(normalizedSymbol,"1m",cancellationToken);
+        return new(normalizedSymbol,timeframe.ToLowerInvariant(),limit,bars,fvgs,coverage);
+    }
+
     public async Task<IReadOnlyList<MarketDataCoverage>> GetAllCoverageAsync(CancellationToken cancellationToken)
     {
         await using var connection = _database.CreateConnection();

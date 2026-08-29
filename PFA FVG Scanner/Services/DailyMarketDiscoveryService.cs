@@ -1,15 +1,22 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.Sqlite;
 using PFA_FVG_Scanner.Data;
 using PFA_FVG_Scanner.Models;
 
 namespace PFA_FVG_Scanner.Services;
 
-public sealed record DailyDiscoveryEvent(string Symbol,DateTime TimeUtc,string Type,string Direction,decimal Strength,string Evidence,decimal Open,decimal High,decimal Low,decimal Close,decimal Volume);
+public sealed record DailyDiscoveryEvent(string EventId,string Symbol,DateTime TimeUtc,DateTime KnownAtUtc,string Timeframe,
+    string Type,string Direction,decimal Strength,string Evidence,decimal Open,decimal High,decimal Low,decimal Close,decimal Volume);
+public sealed record DailyDiscoveryMethod(string Timeframe,int LookbackBars,bool TerminologyNeutral,string Warning);
+public sealed record DailyMarketDiscoveryStudy(string Date,string Clock,DateTime GeneratedAtUtc,IReadOnlyList<string> Symbols,
+    int OneMinuteBars,IReadOnlyList<Dictionary<string,object?>> NamedSetups,IReadOnlyList<Dictionary<string,object?>> Sequences,
+    IReadOnlyList<DailyDiscoveryEvent> DiscoveredEvents,DailyDiscoveryMethod Method);
 
 public sealed class DailyMarketDiscoveryService(PfaDatabase database)
 {
-    public async Task<object> StudyAsync(DateOnly date, CancellationToken token)
+    public async Task<DailyMarketDiscoveryStudy> StudyAsync(DateOnly date, CancellationToken token)
     {
         var start=date.ToDateTime(TimeOnly.MinValue,DateTimeKind.Utc); var end=start.AddDays(1);
         await using var connection=database.CreateConnection(); await connection.OpenAsync(token);
@@ -23,7 +30,8 @@ public sealed class DailyMarketDiscoveryService(PfaDatabase database)
                 var history=bars[(i-20)..i]; var ranges=history.Select(x=>x.High-x.Low).OrderBy(x=>x).ToArray();
                 var volumes=history.Select(x=>x.Volume).OrderBy(x=>x).ToArray(); var medianRange=ranges[ranges.Length/2]; var medianVolume=volumes[volumes.Length/2];
                 var bar=bars[i]; var range=bar.High-bar.Low; var body=Math.Abs(bar.Close-bar.Open); var upper=bar.High-Math.Max(bar.Open,bar.Close); var lower=Math.Min(bar.Open,bar.Close)-bar.Low;
-                void Add(string type,string direction,decimal strength,string evidence)=>events.Add(new(symbolGroup.Key,bar.OpenTimeUtc,type,direction,Math.Round(strength,2),evidence,bar.Open,bar.High,bar.Low,bar.Close,bar.Volume));
+                void Add(string type,string direction,decimal strength,string evidence)
+                {var seed=$"{symbolGroup.Key}|{bar.OpenTimeUtc:O}|5m|{type}|{direction}";var id=$"DME-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed)))[..32]}";events.Add(new(id,symbolGroup.Key,bar.OpenTimeUtc,bar.CloseTimeUtc,"5m",type,direction,Math.Round(strength,2),evidence,bar.Open,bar.High,bar.Low,bar.Close,bar.Volume));}
                 if(medianRange>0&&range>=medianRange*2) Add("RangeExpansion",bar.Close>=bar.Open?"Bullish":"Bearish",range/medianRange,$"5m range {range} is {range/medianRange:0.00}× its prior-20 median.");
                 if(medianVolume>0&&bar.Volume>=medianVolume*2) Add("VolumeBurst",bar.Close>=bar.Open?"Bullish":"Bearish",bar.Volume/medianVolume,$"Volume is {bar.Volume/medianVolume:0.00}× its prior-20 median.");
                 var priorFive=history[^5..]; var avgFive=priorFive.Average(x=>x.High-x.Low);
@@ -36,7 +44,9 @@ public sealed class DailyMarketDiscoveryService(PfaDatabase database)
         }
         var named=await Rows(connection,"SELECT InstrumentId,PatternType,Direction,COUNT(*) Count FROM UniversalMarketObservations WHERE FormationTimeUtc >= $start AND FormationTimeUtc < $end GROUP BY InstrumentId,PatternType,Direction ORDER BY Count DESC",start,end,token);
         var sequences=await Rows(connection,"SELECT InstrumentId,SequenceDefinitionId,State,COUNT(*) Count FROM MarketSequenceInstances WHERE StartedAtUtc >= $start AND StartedAtUtc < $end GROUP BY InstrumentId,SequenceDefinitionId,State ORDER BY Count DESC",start,end,token);
-        return new{date=date.ToString("yyyy-MM-dd"),clock="UTC",generatedAtUtc=DateTime.UtcNow,symbols=candles.Select(x=>x.Symbol).Distinct().Order().ToArray(),oneMinuteBars=candles.Count,namedSetups=named,sequences,discoveredEvents=events.OrderBy(x=>x.TimeUtc).ToArray(),method=new{timeframe="5m",lookbackBars=20,terminologyNeutral=true,warning="Events are descriptive research observations, not trade signals or proof of profitability."}};
+        return new(date.ToString("yyyy-MM-dd"),"UTC",DateTime.UtcNow,candles.Select(x=>x.Symbol).Distinct().Order().ToArray(),
+            candles.Count,named,sequences,events.OrderBy(x=>x.TimeUtc).ToArray(),new("5m",20,true,
+                "Events are descriptive research observations, not trade signals or proof of profitability."));
     }
 
     private static async Task<List<Candle>> LoadCandles(SqliteConnection c,DateTime start,DateTime end,CancellationToken token)

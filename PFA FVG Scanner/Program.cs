@@ -108,6 +108,9 @@ builder.Services.AddSingleton<RangeBreakoutPatternModule>();
 builder.Services.AddSingleton<FailedBreakoutPatternModule>();
 builder.Services.AddSingleton<MarketChartService>();
 builder.Services.AddSingleton<DailyMarketDiscoveryService>();
+builder.Services.AddSingleton<ActionabilityEvidenceService>();
+builder.Services.AddSingleton<PFA_FVG_Scanner.Domain.Context.IResearchContextFamilyRegistry,
+    PFA_FVG_Scanner.Domain.Context.ResearchContextFamilyRegistry>();
 builder.Services.AddSingleton<IMarketSequenceDefinitionRegistry, MarketSequenceDefinitionRegistry>();
 builder.Services.AddSingleton<IMarketSequenceEngine, MarketSequenceEngine>();
 builder.Services.AddSingleton<PatternSequenceReplayService>();

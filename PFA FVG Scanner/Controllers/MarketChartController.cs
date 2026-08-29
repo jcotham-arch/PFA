@@ -12,9 +12,11 @@ public sealed class MarketChartController : ControllerBase
 
     [HttpGet("chart/{symbol}")]
     public async Task<IActionResult> GetChart(string symbol, [FromQuery] string timeframe = "5m",
-        [FromQuery] int limit = 160, CancellationToken cancellationToken = default)
+        [FromQuery] int limit = 160,[FromQuery] DateTime? focusUtc=null,CancellationToken cancellationToken = default)
     {
-        try { return Ok(await _service.GetAsync(symbol, timeframe, limit, cancellationToken)); }
+        try { return Ok(focusUtc.HasValue
+            ? await _service.GetFocusedAsync(symbol,timeframe,limit,focusUtc.Value,cancellationToken)
+            : await _service.GetAsync(symbol, timeframe, limit, cancellationToken)); }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
