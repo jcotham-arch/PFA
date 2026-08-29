@@ -62,6 +62,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateAgentResearchDatasetTablesAsync(connection);
             await CreateAgentBaselineTablesAsync(connection);
             await CreateAgentHurdleTablesAsync(connection);
+            await CreateActionabilitySegmentResearchTablesAsync(connection);
             await CreatePatternTradeResearchTablesAsync(connection);
             await CreateSequenceTradeResearchTablesAsync(connection);
 
@@ -194,6 +195,24 @@ namespace PFA_FVG_Scanner.Data
                 VALUES('AGENT_HURDLE_RUNS_V1',datetime('now'),'Add immutable decomposed-outcome hurdle model runs.');
                 """;
             await ExecuteAsync(connection,sql);
+        }
+
+        private static async Task CreateActionabilitySegmentResearchTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS ActionabilitySegmentResearchReports
+                (ReportId TEXT PRIMARY KEY,ReportVersion TEXT NOT NULL,DatasetId TEXT NOT NULL,DatasetContentHash TEXT NOT NULL,
+                 MinimumSamples INTEGER NOT NULL,ContentHash TEXT NOT NULL,ReportJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0),
+                 FOREIGN KEY(DatasetId) REFERENCES AgentResearchDatasets(DatasetId));
+                CREATE INDEX IF NOT EXISTS IX_ActionabilitySegmentReports_Dataset
+                    ON ActionabilitySegmentResearchReports(DatasetId,CreatedAtUtc);
+                CREATE TRIGGER IF NOT EXISTS TR_ActionabilitySegmentReports_NoUpdate BEFORE UPDATE ON ActionabilitySegmentResearchReports
+                    BEGIN SELECT RAISE(ABORT,'Actionability segment research reports are immutable');END;
+                CREATE TRIGGER IF NOT EXISTS TR_ActionabilitySegmentReports_NoDelete BEFORE DELETE ON ActionabilitySegmentResearchReports
+                    BEGIN SELECT RAISE(ABORT,'Actionability segment research reports are immutable');END;
+                """;await ExecuteAsync(connection,sql);
         }
 
         private static async Task MigrateUniversalOutcomeMetricIdentityAsync(SqliteConnection connection)

@@ -34,3 +34,9 @@ Baseline run `ABR-AAAC375F4CF4BC68309B0051B668EF21` evaluated nine context famil
 The structural base-only model selected 735 untouched-test scenarios at -0.041838 mean net R and 0.773543 profit factor. The all-feature linear model selected 1,335 at -0.093671 mean net R and 0.516308 profit factor. Both remain rejected. This evidence rules out indiscriminate linear context inclusion and supports the next step: module-specific nonlinear selection, train-only regularization, and regime-conditioned thresholds.
 
 Version `research-promotion-gate-2.6.0` also places a deterministic 6,000-example cap on ridge and boosted-stump fitting. Full validation and test populations remain untouched; only model fitting is sampled. This makes repeated ablations reproducible and prevents research requests from monopolizing the local application.
+
+## Regime-conditioned segment search
+
+Version `actionability-segment-research-1.3.0` treats context as a selector rather than forcing every context feature into one linear model. It evaluates module and execution-policy combinations against explicit volatility, volume, auction, and momentum states; joint volatility-volume and auction-momentum states; and active regime interactions.
+
+Report `ASR-75DD88CA05C4F754E38E0F38FD6E8160` evaluated 1,011 segments with at least 100 training and 100 validation examples. All 1,011 failed development economics, so none was permitted to inspect untouched test outcomes. The report retains each rejected segment's training/validation metrics and reasons, is stored immutably, and is available from `/api/research/actionability-segments/history`. This prevents negative evidence from disappearing while protecting the test set from repeated selection pressure.

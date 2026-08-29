@@ -10,4 +10,7 @@ public sealed class ActionabilitySegmentResearchController(ActionabilitySegmentR
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery]int minimumSamples=100,CancellationToken token=default)
     {try{return Ok(await research.AnalyzeAsync(minimumSamples,token));}catch(ArgumentOutOfRangeException exception){return BadRequest(new{message=exception.Message});}catch(InvalidOperationException exception){return Conflict(new{message=exception.Message});}}
+
+    [HttpGet("history")]
+    public async Task<IActionResult> History(CancellationToken token=default)=>Ok(await research.GetAllAsync(token));
 }
