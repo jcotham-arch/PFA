@@ -12,7 +12,7 @@ public sealed class MarketPatternModuleRegistry : IMarketPatternModuleRegistry
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "1m", "5m", "15m", "1h" },
             "Capture/Research active · no strategy judgment",
             "Point-in-time prior-level penetration with explicit reclaim, continuation, depth and equal-level facts."),
-        Planned("market-structure", "Market Structure", "Swing points, trend state, structure breaks and directional transitions."),
+        Active("market-structure", "Market Structure", "Three-bar ascending or descending structure progression with point-in-time completion."),
         Planned("displacement", "Displacement", "Range expansion and directional impulse with point-in-time confirmation."),
         Active("range-breakout", "Range Breakouts", "Prior-range penetration with a completed close beyond the boundary."),
         Active("failed-breakout", "Failed Breakouts", "Prior-range penetration followed by a completed close back inside."),

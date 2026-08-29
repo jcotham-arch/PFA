@@ -204,6 +204,35 @@ public sealed class PatternTradeHypothesisEngineTests
             Assert.Equal(0L,Convert.ToInt64(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)));}
     }
 
+    [Fact]
+    public async Task MarketStructureResearchTestsContinuationAndContrarianDirections()
+    {
+        using var factory=await TestDatabaseFactory.CreateAsync();
+        var repository=new PFA_FVG_Scanner.Data.UniversalMarketRecordRepository(factory.Database);
+        await repository.SaveObservationAsync(new("OBS-STRUCTURE",1,"market-structure","capture-1.0.0",
+            "AscendingStructure","MES","MESU6","5m",PatternDirection.Bullish,Now.AddMinutes(-5),Now,
+            PatternLifecycleState.Detected,"test","{\"RangeLower\":99,\"RangeUpper\":101,\"DetectionClose\":100}",
+            [],MarketDataQualityFlags.None,"H-STRUCTURE"),TestContext.Current.CancellationToken);
+        await using(var connection=factory.Database.CreateConnection())
+        {
+            await connection.OpenAsync(TestContext.Current.CancellationToken);await using var command=connection.CreateCommand();
+            command.CommandText="""
+                INSERT INTO CanonicalResolvedResearchBars
+                (CanonicalBarId,InstrumentId,Timeframe,OpenTimeUtc,CloseTimeUtc,Open,High,Low,Close,Volume)
+                VALUES('BAR-STRUCTURE','MES','1m',$openTime,$closeTime,'100','101','99','100.5','100');
+                """;
+            command.Parameters.AddWithValue("$openTime",Now.ToString("O"));
+            command.Parameters.AddWithValue("$closeTime",Now.AddMinutes(1).ToString("O"));
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+        var service=new PatternTradeResearchService(factory.Database,new InstrumentDefinitionRegistry());
+        var run=await service.RunAsync(new(Now.AddHours(1),["MES"],["market-structure"],[1],[15],1,1,
+            ["opposite-range-invalidation"],["fixed-target-or-time"],["next-one-minute-open"]),TestContext.Current.CancellationToken);
+        Assert.Equal(2,run.HypothesisCount);
+        Assert.Contains(run.Summaries,x=>x.DirectionPolicy==HypothesisDirectionPolicy.PatternDirection);
+        Assert.Contains(run.Summaries,x=>x.DirectionPolicy==HypothesisDirectionPolicy.OpposePatternDirection);
+    }
+
     private static PatternTradeHypothesisDefinition Definition(string module)=>new($"test-{module}","1",module,
         HypothesisDirectionPolicy.PatternDirection,"next-one-minute-open","extreme-invalidation",1m,15,1m);
     private static MarketPatternObservation Sweep()=>new("OBS","liquidity-sweep","1","LiquiditySweep","MES","MESU6","5m",

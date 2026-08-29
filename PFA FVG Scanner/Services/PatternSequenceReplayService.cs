@@ -4,6 +4,7 @@ using PFA_FVG_Scanner.Domain.Patterns;
 using PFA_FVG_Scanner.Domain.Patterns.Breakouts;
 using PFA_FVG_Scanner.Domain.Patterns.Fvg;
 using PFA_FVG_Scanner.Domain.Patterns.Liquidity;
+using PFA_FVG_Scanner.Domain.Patterns.Structure;
 using PFA_FVG_Scanner.Domain.Sequences;
 using PFA_FVG_Scanner.Domain.Timeline;
 using System.Security.Cryptography;
@@ -25,7 +26,8 @@ public sealed class PatternSequenceReplayService(
     FvgPatternModule fvg,
     LiquiditySweepPatternModule liquiditySweep,
     RangeBreakoutPatternModule rangeBreakout,
-    FailedBreakoutPatternModule failedBreakout)
+    FailedBreakoutPatternModule failedBreakout,
+    MarketStructurePatternModule marketStructure)
 {
     private static readonly MarketDataQualityFlags Rejected = MarketDataQualityFlags.Incomplete |
         MarketDataQualityFlags.InvalidOhlc | MarketDataQualityFlags.UnresolvedInstrument |
@@ -43,7 +45,7 @@ public sealed class PatternSequenceReplayService(
         if (endUtc.HasValue) bars = bars.Where(x => x.OpenTimeUtc < endUtc.Value.ToUniversalTime()).ToArray();
         if (bars.Count == 0)
             bars = await GetLegacyBarsAsync(instrumentId, contractId, timeframe, startUtc, endUtc, cancellationToken);
-        var detectors = new IMarketPatternDetector[] { fvg, liquiditySweep, rangeBreakout, failedBreakout };
+        var detectors = new IMarketPatternDetector[] { fvg, liquiditySweep, rangeBreakout, failedBreakout, marketStructure };
         var detected = new Dictionary<string, UniversalMarketObservation>(StringComparer.Ordinal);
         var counts = detectors.ToDictionary(x => x.ModuleId, _ => 0, StringComparer.OrdinalIgnoreCase);
 

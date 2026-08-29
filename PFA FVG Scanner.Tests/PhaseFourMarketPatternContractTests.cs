@@ -1,5 +1,6 @@
 using PFA_FVG_Scanner.Domain.Patterns;
 using PFA_FVG_Scanner.Domain.Timeline;
+using PFA_FVG_Scanner.Domain.Patterns.Structure;
 using PFA_FVG_Scanner.Models;
 using PFA_FVG_Scanner.Services;
 
@@ -56,9 +57,24 @@ public sealed class PhaseFourMarketPatternContractTests
     public void ModuleInventoryDocumentsLegacyBoundaryWithoutWrappingItEarly()
     {
         var modules = new MarketPatternModuleRegistry().GetAll();
-        Assert.Equal(new[] { "fvg", "liquidity-sweep", "range-breakout", "failed-breakout" },
+        Assert.Equal(new[] { "fvg", "liquidity-sweep", "market-structure", "range-breakout", "failed-breakout" },
             modules.Where(x => x.Version != "definition-pending").Select(x => x.ModuleId));
-        Assert.Equal(7, modules.Count(x => x.Version == "definition-pending"));
+        Assert.Equal(6, modules.Count(x => x.Version == "definition-pending"));
+    }
+
+    [Fact]
+    public void MarketStructureRequiresCompletedThreeBarProgressionAndEmitsStructuralRange()
+    {
+        var bars=new[]
+        {
+            Bar("S1",0,100,102,99,101),Bar("S2",5,101,103,100,102),Bar("S3",10,102,104,101,103)
+        };
+        var clock=bars[^1].CloseTimeUtc;var detector=new MarketStructurePatternModule();
+        var result=detector.Detect(new("MES","MESU6","5m",clock,bars,MarketDataQualityFlags.None));
+        var observation=Assert.Single(result.Observations);Assert.Equal("AscendingStructure",observation.PatternType);
+        Assert.Equal(PatternDirection.Bullish,observation.Direction);Assert.Equal(clock,observation.KnownAtUtc);
+        var geometry=Assert.IsType<StructureProgressionGeometry>(observation.Geometry);
+        Assert.Equal(99,geometry.RangeLower);Assert.Equal(104,geometry.RangeUpper);
     }
 
     [Theory]
@@ -89,6 +105,11 @@ public sealed class PhaseFourMarketPatternContractTests
             CorrectionState.Original, quality, TestData.BaseTime, "HASH");
         return new("MES", "MES-TEST", timeframe, TestData.BaseTime.AddMinutes(5), [bar], quality);
     }
+
+    private static CanonicalBar Bar(string id,int minute,decimal open,decimal high,decimal low,decimal close)
+    {var start=TestData.BaseTime.AddMinutes(minute);return new(id,1,"MES","MESU6","MESU6","5m",start,start.AddMinutes(5),
+        open,high,low,close,10,true,"SESSION",DateOnly.FromDateTime(start),"1","1",CorrectionState.Original,
+        MarketDataQualityFlags.None,start.AddMinutes(5),$"HASH-{id}");}
 
     private sealed class TestDetector : IMarketPatternDetector
     {

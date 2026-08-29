@@ -93,6 +93,16 @@ The Research screen includes a UTC-date study endpoint and view. For August 27, 
 
 These events retain symbol, UTC clock, OHLCV, numeric strength, and a human-readable calculation. They are research observations rather than entries or evidence of profitability. Their trade value still requires separately versioned hypotheses, chronological splits, costs, and untouched evaluation.
 
+## Market-structure continuation and reversal V1.0
+
+The registered `market-structure` module converts completed three-bar ascending and descending progressions into point-in-time observations on the 5-minute, 15-minute, and 1-hour timeframes. Each observation retains its source bars, range boundaries, detection close, formation clock, and knowledge clock. The detector is now part of normal replay and campaign processing rather than only the terminology-neutral daily-study view.
+
+Run `PTR-A75C86CF8D07B95E0B1C75BFD43B3677` independently evaluates the 7,026 five-minute MES structure observations produced by the bounded campaign. It compares both continuation and contrarian direction, immediate and directional-confirmation entries, a structural opposite-range stop, targets from 0.5R through 2R, 5/15/30-minute holds, three exit policies, a one-tick stop buffer, and one tick of estimated round-trip cost. The 144 definitions produce 1,011,744 immutable scenario samples.
+
+Zero definitions pass the development gate of positive mean net R and profit factor above one in both chronological training and validation. The best development-ranked definition is continuation at the next one-minute open, a 0.5R target, a five-minute hold, and fixed or 1R break-even management. It records -0.051231R mean net outcome and 0.724483 profit factor in training, then -0.060480R and 0.688879 in validation. Because it fails development, its test partition is not used for selection and no structure definition is promoted to the sandbox.
+
+This result rejects broad three-bar structure as a standalone entry signal under the tested execution policies. It does not reject structure as context. The next experiment must require a more specific event chain such as impulse, controlled retracement, level reclaim, and continuation confirmation.
+
 ## Next research work
 
 1. Add entry variants: reclaim retest, boundary limit, and delayed confirmation.

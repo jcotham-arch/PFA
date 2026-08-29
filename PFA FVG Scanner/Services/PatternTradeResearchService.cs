@@ -12,7 +12,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class PatternTradeResearchService(PfaDatabase database,IInstrumentDefinitionRegistry instruments)
 {
-    private static readonly string[] SupportedModules=["liquidity-sweep","range-breakout","failed-breakout"];
+    private static readonly string[] SupportedModules=["liquidity-sweep","range-breakout","failed-breakout","market-structure"];
 
     public async Task<PatternTradeResearchRun> RunAsync(PatternTradeResearchRequest request,CancellationToken token=default)
     {
@@ -20,7 +20,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
         if(asOf==default)throw new ArgumentException("A non-default AsOfUtc is required.");
         var modules=(request.ModuleIds??SupportedModules).Select(Normalize).Distinct().Order().ToArray();
         if(modules.Length==0||modules.Any(x=>!SupportedModules.Contains(x,StringComparer.Ordinal)))
-            throw new ArgumentException("Only liquidity-sweep, range-breakout, and failed-breakout are supported.");
+            throw new ArgumentException("Only liquidity-sweep, range-breakout, failed-breakout, and market-structure are supported.");
         var roots=(request.InstrumentIds??[]).Select(x=>x.Trim().ToUpperInvariant()).Where(x=>x.Length>0).Distinct().Order().ToArray();
         var targetRs=(request.TargetRs??[1m,2m,3m]).Distinct().Order().ToArray();
         var holds=(request.MaximumHoldingMinutes??[15,30,60]).Distinct().Order().ToArray();
@@ -128,7 +128,7 @@ public sealed class PatternTradeResearchService(PfaDatabase database,IInstrument
     {
         var values=new List<PatternTradeHypothesisDefinition>();foreach(var module in modules)
         {
-            var policies=module=="failed-breakout"?new[]{HypothesisDirectionPolicy.PatternDirection,HypothesisDirectionPolicy.OpposePatternDirection}:
+            var policies=module is "failed-breakout" or "market-structure"?new[]{HypothesisDirectionPolicy.PatternDirection,HypothesisDirectionPolicy.OpposePatternDirection}:
                 new[]{HypothesisDirectionPolicy.PatternDirection};
             foreach(var policy in policies)foreach(var entry in entryPolicies)
             foreach(var stop in requestedStops??Stops(module,policy))foreach(var exit in exitPolicies)foreach(var target in targets)foreach(var hold in holds)
