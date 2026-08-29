@@ -9,7 +9,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version="actionability-outcome-dataset-1.1.0";
+    public const string Version="actionability-outcome-dataset-1.2.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(ActionabilityOutcomeDatasetRequest request,
         CancellationToken token=default)
@@ -42,7 +42,17 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
         string[] instruments,string[] modules,CancellationToken token)
     {
         var values=new List<GenericOutcomeResearchExample>();await using var command=connection.CreateCommand();command.CommandText="""
-            SELECT s.SampleJson,o.FormationTimeUtc,o.KnownAtUtc,o.Timeframe,o.PayloadJson,o.ContentHash
+            SELECT s.SampleJson,o.FormationTimeUtc,o.KnownAtUtc,o.Timeframe,o.PayloadJson,o.ContentHash,
+                   (SELECT json_object('close',b.Close,'high',b.High,'low',b.Low,'volume',b.Volume)
+                    FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
+                      AND b.CloseTimeUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc') ORDER BY b.CloseTimeUtc DESC LIMIT 1) latestBar,
+                   (SELECT b.Close FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
+                      AND b.CloseTimeUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc') ORDER BY b.CloseTimeUtc DESC LIMIT 1 OFFSET 5) priorClose,
+                   (SELECT json_object('meanRange20',AVG(x.barRange),'meanVolume20',AVG(x.volume),'meanBody20',AVG(x.body),'high20',MAX(x.high),'low20',MIN(x.low))
+                    FROM (SELECT CAST(b.High AS REAL)-CAST(b.Low AS REAL) barRange,CAST(b.Volume AS REAL) volume,
+                                 ABS(CAST(b.Close AS REAL)-CAST(b.Open AS REAL)) body,CAST(b.High AS REAL) high,CAST(b.Low AS REAL) low
+                          FROM CanonicalResolvedResearchBars b WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m'
+                            AND b.CloseTimeUtc<=json_extract(s.SampleJson,'$.EntryTimeUtc') ORDER BY b.CloseTimeUtc DESC LIMIT 20) x) context20
             FROM PatternTradeResearchSamples s JOIN UniversalMarketObservations o ON o.ObservationId=s.ObservationId
             WHERE s.RunId=$run AND s.NetR IS NOT NULL ORDER BY o.FormationTimeUtc,s.SampleId;
             """;command.Parameters.AddWithValue("$run",run.RunId);await using var reader=await command.ExecuteReaderAsync(token);
@@ -55,6 +65,7 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
                instruments.Length>0&&!instruments.Contains(sample.InstrumentId,StringComparer.Ordinal)||
                modules.Length>0&&!modules.Contains(sample.ModuleId,StringComparer.Ordinal))continue;
             definitions.TryGetValue(sample.HypothesisId,out var definition);var features=Geometry(reader.GetString(4));
+            var actionClock=sample.EntryTimeUtc.Value;
             features["direction"]=sample.Direction.Equals("Bullish",StringComparison.OrdinalIgnoreCase)?1m:-1m;
             features[$"context.instrument.{sample.InstrumentId}"]=1m;features[$"context.module.{sample.ModuleId}"]=1m;
             features[$"context.pattern.{sample.PatternType}"]=1m;features[$"policy.entry.{definition?.EntryPolicy??"unknown"}"]=1m;
@@ -62,11 +73,12 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
             features[$"policy.direction.{definition?.DirectionPolicy.ToString()??"unknown"}"]=1m;
             features["policy.targetR"]=definition?.TargetR??0;features["policy.maximumHoldingMinutes"]=definition?.MaximumHoldingMinutes??0;
             features["policy.initialRiskPoints"]=Math.Abs(sample.EntryPrice!.Value-sample.StopPrice!.Value);
-            var actionClock=sample.EntryTimeUtc.Value;
             features["policy.minutesRecognitionToEntry"]=(decimal)(actionClock-sample.DecisionTimeUtc).TotalMinutes;
             var minute=actionClock.Hour*60+actionClock.Minute;
             features["time.hourSin"]=(decimal)Math.Sin(2*Math.PI*minute/1440d);features["time.hourCos"]=(decimal)Math.Cos(2*Math.PI*minute/1440d);
             features["time.weekdaySin"]=(decimal)Math.Sin(2*Math.PI*(int)actionClock.DayOfWeek/7d);features["time.weekdayCos"]=(decimal)Math.Cos(2*Math.PI*(int)actionClock.DayOfWeek/7d);
+            features[$"context.session.{SessionSegment(actionClock.Hour)}"]=1m;features["context.session.progressUtcDay"]=minute/1440m;
+            AddMarketContext(features,reader.IsDBNull(6)?null:reader.GetString(6),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8));
             var labels=new Dictionary<string,decimal>{{"netR",sample.NetR.Value},{"grossR",sample.GrossR??sample.NetR.Value},
                 {"maximumFavorableExcursionR",sample.MaximumFavorableExcursionR??0},{"maximumAdverseExcursionR",sample.MaximumAdverseExcursionR??0},
                 {"profitable",sample.NetR>0?1m:0m}};
@@ -103,6 +115,21 @@ public sealed class ActionabilityOutcomeDatasetService(PfaDatabase database)
     }
 
     private static Dictionary<string,decimal> Geometry(string json){var values=new Dictionary<string,decimal>(StringComparer.Ordinal);try{using var document=JsonDocument.Parse(json);Walk(document.RootElement,"geometry",values);}catch(JsonException){}return values;}
+    private static void AddMarketContext(Dictionary<string,decimal> features,string? latestJson,string? priorCloseText,string? contextJson)
+    {
+        decimal close=0,volume=0;if(!string.IsNullOrWhiteSpace(latestJson)){using var latest=JsonDocument.Parse(latestJson);var root=latest.RootElement;
+            close=TextDecimal(root,"close");var high=TextDecimal(root,"high");var low=TextDecimal(root,"low");volume=TextDecimal(root,"volume");
+            features["market.rangeFraction"]=close==0?0:(high-low)/close;features["market.closeLocation"]=high==low?.5m:(close-low)/(high-low);
+            features["market.volumeLog"]=(decimal)Math.Log(1+(double)Math.Max(0,volume));}
+        if(decimal.TryParse(priorCloseText,NumberStyles.Number,CultureInfo.InvariantCulture,out var prior)&&prior!=0)features["context.momentum.return5Fraction"]=(close-prior)/prior;
+        if(string.IsNullOrWhiteSpace(contextJson))return;using var context=JsonDocument.Parse(contextJson);var node=context.RootElement;
+        decimal Read(string name)=>node.TryGetProperty(name,out var value)&&value.ValueKind==JsonValueKind.Number&&value.TryGetDecimal(out var number)?number:0;
+        var range=Read("meanRange20");var meanVolume=Read("meanVolume20");features["context.volatility.meanRange20"]=range;
+        features["context.volume.meanVolume20"]=meanVolume;features["context.volume.relativeVolume"]=meanVolume==0?0:volume/meanVolume;
+        features["context.trend.meanBodyToRange20"]=range==0?0:Read("meanBody20")/range;features["context.trend.rangeWidth20"]=Read("high20")-Read("low20");
+    }
+    private static decimal TextDecimal(JsonElement root,string name)=>root.TryGetProperty(name,out var node)&&decimal.TryParse(node.GetString(),NumberStyles.Number,CultureInfo.InvariantCulture,out var value)?value:0;
+    private static string SessionSegment(int hour)=>hour switch{<8=>"Overnight",<13=>"Premarket",<16=>"RegularMorning",<18=>"RegularMidday",<20=>"RegularAfternoon",_=>"PostMarket"};
     private static void Walk(JsonElement value,string path,Dictionary<string,decimal> output){if(output.Count>=64)return;if(value.ValueKind==JsonValueKind.Object)foreach(var p in value.EnumerateObject())Walk(p.Value,$"{path}.{p.Name}",output);else if(value.ValueKind==JsonValueKind.Number&&value.TryGetDecimal(out var number))output[path]=number;}
     private static string[] Normalize(IReadOnlyList<string>? values,bool uppercase)=>(values??[]).Where(x=>!string.IsNullOrWhiteSpace(x))
         .Select(x=>uppercase?x.Trim().ToUpperInvariant():x.Trim().ToLowerInvariant()).Distinct(StringComparer.Ordinal).Order().ToArray();
