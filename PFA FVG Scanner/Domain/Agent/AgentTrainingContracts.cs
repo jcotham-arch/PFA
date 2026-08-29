@@ -81,6 +81,14 @@ public sealed record AgentEconomicWalkForwardMetric(int Fold,int EmbargoMinutes,
     int ValidationSamples,int SelectedSamples,DateTime ValidationStartUtc,DateTime ValidationEndUtc,
     decimal MeanNetR,decimal WinRate,decimal ProfitFactor,decimal MaximumDrawdownR);
 
+public sealed record AgentLinearModelArtifact(string ArtifactId,string Variant,string TargetName,
+    IReadOnlyList<string> FeatureNames,IReadOnlyList<decimal> Means,IReadOnlyList<decimal> Scales,
+    IReadOnlyList<decimal> Coefficients,string ContentHash);
+
+public sealed record AgentResearchScore(string RunId,string ArtifactId,string TargetName,DateTime ScoredAtUtc,
+    DateTime FeaturesKnownAtUtc,decimal Prediction,string Classification,string ArtifactContentHash,
+    bool IsResearchOnly=true,bool CanActivateStrategy=false,bool CanRouteToRealBroker=false);
+
 public sealed record AgentWalkForwardMetric(int Fold,int EmbargoMinutes,int TrainingSamples,
     int ValidationSamples,DateTime ValidationStartUtc,DateTime ValidationEndUtc,
     decimal MeanAbsoluteError,decimal RootMeanSquaredError,decimal DirectionalAccuracy);
@@ -99,4 +107,5 @@ public sealed record AgentBaselineRun(string RunId,string ModelVersion,string Da
     IReadOnlyList<AgentContextAblationMetric>? ContextAblations=null,
     IReadOnlyList<AgentContextFamilyAblationMetric>? ContextFamilyAblations=null,
     IReadOnlyList<AgentEconomicPolicyMetric>? EconomicPolicyMetrics=null,
-    IReadOnlyList<AgentEconomicWalkForwardMetric>? EconomicWalkForwardMetrics=null);
+    IReadOnlyList<AgentEconomicWalkForwardMetric>? EconomicWalkForwardMetrics=null,
+    IReadOnlyList<AgentLinearModelArtifact>? ModelArtifacts=null);

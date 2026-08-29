@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-2.3.0";
+    public const string Version = "research-promotion-gate-2.4.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -99,20 +99,22 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
             })).ToArray();
         var walkForwardMetrics = BuildWalkForwardMetrics(rows, 15);
         var economicWalkForward=request.TargetName=="netR"?BuildEconomicWalkForwardMetrics(rows,15):[];
+        var artifacts=new[]{Artifact("ridge-linear",request.TargetName,ridge)};
         var promotionGate = BuildPromotionGate(request.TargetName,variantMetrics, segmentMetrics, walkForwardMetrics,
             economicPolicyMetrics,economicWalkForward);
         var seed = JsonSerializer.Serialize(new { Version,request.DatasetId,datasetHash,request.TargetName,
             Groups=groups.OrderBy(x=>x.Key),GlobalMean=globalMean,Metrics=metrics,SegmentMetrics=segmentMetrics,
             VariantMetrics=variantMetrics,WalkForwardMetrics=walkForwardMetrics,PromotionGate=promotionGate,
             ContextAblations=contextAblations,ContextFamilyAblations=contextFamilyAblations,
-            EconomicPolicyMetrics=economicPolicyMetrics,EconomicWalkForwardMetrics=economicWalkForward });
+            EconomicPolicyMetrics=economicPolicyMetrics,EconomicWalkForwardMetrics=economicWalkForward,
+            ModelArtifacts=artifacts });
         var contentHash = AgentTrainingDatasetBuilder.Hash(seed);
         var run = new AgentBaselineRun($"ABR-{contentHash[..32]}", Version, request.DatasetId, datasetHash,
             request.TargetName, training.Length, groups.Count, metrics, DateTime.UtcNow, contentHash,
             SegmentMetrics:segmentMetrics,VariantMetrics:variantMetrics,WalkForwardMetrics:walkForwardMetrics,
             PromotionGate:promotionGate,ContextAblations:contextAblations,
-            ContextFamilyAblations:contextFamilyAblations,EconomicPolicyMetrics:economicPolicyMetrics);
-        run=run with{EconomicWalkForwardMetrics=economicWalkForward};
+            ContextFamilyAblations:contextFamilyAblations,EconomicPolicyMetrics:economicPolicyMetrics,
+            EconomicWalkForwardMetrics:economicWalkForward,ModelArtifacts:artifacts);
         await PersistAsync(run, token);
         return run;
     }
@@ -125,6 +127,18 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var values = new List<AgentBaselineRun>(); await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token)) values.Add(JsonSerializer.Deserialize<AgentBaselineRun>(reader.GetString(0))!);
         return values;
+    }
+
+    public async Task<AgentResearchScore> ScoreAsync(string runId,DateTime featuresKnownAtUtc,
+        IReadOnlyDictionary<string,decimal> features,CancellationToken token=default)
+    {
+        var run=(await GetAllAsync(token)).FirstOrDefault(x=>x.RunId==runId)??throw new KeyNotFoundException("Agent baseline run was not found.");
+        var artifact=run.ModelArtifacts?.FirstOrDefault(x=>x.Variant=="ridge-linear")??throw new InvalidOperationException("Run has no frozen ridge-linear artifact.");
+        if(artifact.Coefficients.Count!=artifact.FeatureNames.Count+1)throw new InvalidOperationException("Frozen model artifact is malformed.");
+        var prediction=artifact.Coefficients[0];for(var i=0;i<artifact.FeatureNames.Count;i++)prediction+=artifact.Coefficients[i+1]*
+            (features.GetValueOrDefault(artifact.FeatureNames[i])-artifact.Means[i])/artifact.Scales[i];
+        prediction=Round(prediction);return new(run.RunId,artifact.ArtifactId,run.TargetName,DateTime.UtcNow,
+            Utc(featuresKnownAtUtc),prediction,prediction>0?"PredictedPositive":prediction<0?"PredictedNegative":"Neutral",artifact.ContentHash);
     }
 
     private async Task<(string DatasetHash,List<Row> Rows)> ReadAsync(string datasetId,string target,CancellationToken token)
@@ -174,6 +188,9 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     }
 
     private static decimal Round(decimal value)=>decimal.Round(value,6,MidpointRounding.AwayFromZero);
+    private static AgentLinearModelArtifact Artifact(string variant,string target,RidgeModel model)
+    {var hash=AgentTrainingDatasetBuilder.Hash(JsonSerializer.Serialize(new{Version,variant,target,model.Names,model.Means,model.Scales,model.Coefficients}));return new($"AMA-{hash[..32]}",variant,target,model.Names,model.Means,model.Scales,model.Coefficients,hash);}
+    private static DateTime Utc(DateTime value)=>value.Kind==DateTimeKind.Utc?value:value.Kind==DateTimeKind.Unspecified?DateTime.SpecifyKind(value,DateTimeKind.Utc):value.ToUniversalTime();
     private static bool IsResearchContextFeature(string name)=>name.StartsWith("time.",StringComparison.Ordinal)||
         name.StartsWith("context.session.",StringComparison.Ordinal)||
         name.StartsWith("context.volatility.",StringComparison.Ordinal)||

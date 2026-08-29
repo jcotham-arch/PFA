@@ -109,6 +109,9 @@ public sealed class ProductModuleAndAgentTrainingTests
         Assert.NotEmpty(ablations);Assert.All(ablations,x=>Assert.True(x.TestSamples>0));
         var familyAblations=Assert.IsAssignableFrom<IReadOnlyList<AgentContextFamilyAblationMetric>>(baseline.ContextFamilyAblations);
         Assert.Equal(6,familyAblations.Count);Assert.Contains(familyAblations,x=>x.FamilyId=="seasonality");
+        var artifact=Assert.Single(baseline.ModelArtifacts!);Assert.Equal("ridge-linear",artifact.Variant);
+        var score=await training.ScoreAsync(baseline.RunId,Now,new Dictionary<string,decimal>(),TestContext.Current.CancellationToken);
+        Assert.Equal(artifact.ArtifactId,score.ArtifactId);Assert.False(score.CanActivateStrategy);Assert.False(score.CanRouteToRealBroker);
         Assert.NotEmpty(baseline.PromotionGate.Reasons);Assert.False(baseline.CanActivateStrategy);
         Assert.False(baseline.CanActivateStrategy);Assert.False(baseline.CanRouteToRealBroker);
         Assert.Single(await training.GetAllAsync(TestContext.Current.CancellationToken));
