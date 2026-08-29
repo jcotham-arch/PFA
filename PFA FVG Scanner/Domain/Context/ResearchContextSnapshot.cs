@@ -18,7 +18,7 @@ public sealed record ResearchContextSnapshot(string SnapshotId,string Version,st
 
 public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessions)
 {
-    public const string Version="bar-derived-context-1.0.0";
+    public const string Version="bar-derived-context-1.1.0";
 
     public ResearchContextSnapshot Build(string instrumentId,string? contractId,string timeframe,DateTime decisionTimeUtc,
         IReadOnlyList<CanonicalBar> source)
@@ -29,7 +29,11 @@ public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessi
         var recent=bars.TakeLast(120).ToArray();var refs=recent.Select(x=>$"{x.CanonicalBarId}:r{x.Revision}").ToArray();
         var values=new List<ResearchContextFeatureSet>{Seasonality(decision),Session(instrumentId,decision),
             Volatility(recent,refs),Volume(recent,refs),Trend(recent,refs),Momentum(recent,refs),
-            LiquidityProxy(recent,refs),ContractCycle(contractId,decision)};
+            LiquidityProxy(recent,refs),ContractCycle(contractId,decision),
+            SourceUnavailable("order-flow","Timestamped trades-and-quotes history is not connected for this decision clock."),
+            SourceUnavailable("level-two","Timestamped market-depth snapshots are not connected for this decision clock."),
+            SourceUnavailable("options-positioning","A revisioned options-positioning source is not connected for this decision clock."),
+            SourceUnavailable("market-breadth","A revisioned breadth source is not connected for this decision clock.")};
         var seed=JsonSerializer.Serialize(new{Version,instrumentId,contractId,timeframe,decision,Families=values});
         var hash=Hash(seed);return new($"RCS-{hash[..32]}",Version,instrumentId,contractId,timeframe,decision,decision,values,hash);
     }
@@ -39,9 +43,9 @@ public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessi
     private ResearchContextFeatureSet Session(string instrument,DateTime clock)
     {var value=sessions.Assign(instrument,clock);var elapsed=(decimal)(clock-value.Session.SessionOpenUtc).TotalMinutes;var duration=(decimal)(value.Session.SessionCloseUtc-value.Session.SessionOpenUtc).TotalMinutes;return Available("session-structure",new Dictionary<string,decimal>{{"minutesFromSessionOpen",elapsed},{"sessionProgress",duration<=0?0:elapsed/duration},{"isHoliday",value.Session.IsHoliday?1:0},{"isEarlyClose",value.Session.IsEarlyClose?1:0}},new Dictionary<string,string>{{"segment",value.Segment.ToString()},{"assignmentQuality",value.Session.Quality.ToString()}},[]);}
     private static ResearchContextFeatureSet Volatility(CanonicalBar[] bars,string[] refs)
-    {if(bars.Length<21)return Missing("volatility-regime",bars.Length,21,refs);var ranges=bars.Select(x=>x.High-x.Low).ToArray();var recent=ranges.TakeLast(5).Average();var baseline=ranges.TakeLast(20).Average();var returns=Returns(bars.TakeLast(21).ToArray());var realized=(decimal)Math.Sqrt((double)returns.Average(x=>x*x));return Available("volatility-regime",new Dictionary<string,decimal>{{"meanRange5",recent},{"meanRange20",baseline},{"rangeRatio5To20",baseline==0?0:recent/baseline},{"realizedReturnVolatility20",realized}},new Dictionary<string,string>(),refs);}
+    {if(bars.Length<21)return Missing("volatility-regime",bars.Length,21,refs);var ranges=bars.Select(x=>x.High-x.Low).ToArray();var recent=ranges.TakeLast(5).Average();var baseline=ranges.TakeLast(20).Average();var ratio=baseline==0?0:recent/baseline;var returns=Returns(bars.TakeLast(21).ToArray());var realized=(decimal)Math.Sqrt((double)returns.Average(x=>x*x));var regime=ratio>=1.25m?"Expansion":ratio<=.75m?"Compression":"Normal";return Available("volatility-regime",new Dictionary<string,decimal>{{"meanRange5",recent},{"meanRange20",baseline},{"rangeRatio5To20",ratio},{"realizedReturnVolatility20",realized}},new Dictionary<string,string>{{"regime",regime}},refs);}
     private static ResearchContextFeatureSet Volume(CanonicalBar[] bars,string[] refs)
-    {if(bars.Length<21)return Missing("volume-regime",bars.Length,21,refs);var last=bars[^1].Volume;var avg5=bars.TakeLast(5).Average(x=>x.Volume);var avg20=bars.TakeLast(20).Average(x=>x.Volume);return Available("volume-regime",new Dictionary<string,decimal>{{"lastVolume",last},{"meanVolume5",avg5},{"meanVolume20",avg20},{"relativeVolume",avg20==0?0:last/avg20},{"volumeAcceleration",avg20==0?0:avg5/avg20}},new Dictionary<string,string>(),refs);}
+    {if(bars.Length<21)return Missing("volume-regime",bars.Length,21,refs);var last=bars[^1].Volume;var avg5=bars.TakeLast(5).Average(x=>x.Volume);var avg20=bars.TakeLast(20).Average(x=>x.Volume);var relative=avg20==0?0:last/avg20;var regime=relative>=1.25m?"High":relative<=.75m?"Low":"Normal";return Available("volume-regime",new Dictionary<string,decimal>{{"lastVolume",last},{"meanVolume5",avg5},{"meanVolume20",avg20},{"relativeVolume",relative},{"volumeAcceleration",avg20==0?0:avg5/avg20}},new Dictionary<string,string>{{"regime",regime}},refs);}
     private static ResearchContextFeatureSet Trend(CanonicalBar[] bars,string[] refs)
     {if(bars.Length<21)return Missing("trend-balance-regime",bars.Length,21,refs);var window=bars.TakeLast(20).ToArray();var net=Math.Abs(window[^1].Close-window[0].Open);var path=window.Sum(x=>Math.Abs(x.Close-x.Open));var high=window.Max(x=>x.High);var low=window.Min(x=>x.Low);var efficiency=path==0?0:net/path;var slope=(window[^1].Close-window[0].Close)/19m;var regime=efficiency>=.45m?"Trend":efficiency<=.20m?"Balance":"Transition";return Available("trend-balance-regime",new Dictionary<string,decimal>{{"efficiency20",efficiency},{"closeSlope20",slope},{"rangeWidth20",high-low}},new Dictionary<string,string>{{"regime",regime}},refs);}
     private static ResearchContextFeatureSet Momentum(CanonicalBar[] bars,string[] refs)
@@ -51,6 +55,7 @@ public sealed class BarDerivedResearchContextEngine(ITradingSessionService sessi
     private static ResearchContextFeatureSet ContractCycle(string? contractId,DateTime clock)=>new("contract-cycle",Version,ContextFeatureAvailability.InsufficientHistory,new Dictionary<string,decimal>(),new Dictionary<string,string>{{"contractId",contractId??"UNRESOLVED"}},[],"Expiration and rollover dates require a reviewed contract calendar.");
     private static decimal[] Returns(CanonicalBar[] bars)=>bars.Zip(bars.Skip(1),(a,b)=>a.Close==0?0:(b.Close-a.Close)/a.Close).ToArray();
     private static ResearchContextFeatureSet Missing(string id,int actual,int required,string[] refs)=>new(id,Version,ContextFeatureAvailability.InsufficientHistory,new Dictionary<string,decimal>(),new Dictionary<string,string>(),refs,$"Requires {required} completed bars; {actual} were available at the decision clock.");
+    private static ResearchContextFeatureSet SourceUnavailable(string id,string reason)=>new(id,Version,ContextFeatureAvailability.SourceUnavailable,new Dictionary<string,decimal>(),new Dictionary<string,string>(),[],reason);
     private static ResearchContextFeatureSet Available(string id,IReadOnlyDictionary<string,decimal> numeric,IReadOnlyDictionary<string,string> categorical,IReadOnlyList<string> refs,string? reason=null)=>new(id,Version,ContextFeatureAvailability.Available,numeric,categorical,refs,reason);
     private static DateTime Utc(DateTime value)=>value.Kind==DateTimeKind.Utc?value:value.Kind==DateTimeKind.Unspecified?DateTime.SpecifyKind(value,DateTimeKind.Utc):value.ToUniversalTime();
     private static string Hash(string value)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));

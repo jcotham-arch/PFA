@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class GenericOutcomeDatasetService(PfaDatabase database)
 {
-    public const string Version = "generic-outcome-dataset-1.4.0";
+    public const string Version = "generic-outcome-dataset-1.5.0";
 
     public async Task<GenericOutcomeDatasetManifest> BuildAsync(GenericOutcomeDatasetRequest request,
         CancellationToken token = default)
@@ -82,12 +82,14 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
                     WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m' AND b.CloseTimeUtc<=o.KnownAtUtc
                     ORDER BY b.CloseTimeUtc DESC LIMIT 1 OFFSET 5) priorClose,
                    (SELECT json_object(
-                        'meanRange20',AVG(x.barRange),'meanVolume20',AVG(x.volume),
+                        'barCount',COUNT(*),'meanRange5',AVG(CASE WHEN x.rn<=5 THEN x.barRange END),'meanRange20',AVG(x.barRange),
+                        'meanVolume5',AVG(CASE WHEN x.rn<=5 THEN x.volume END),'meanVolume20',AVG(x.volume),
                         'meanBody20',AVG(x.body),'high20',MAX(x.high),'low20',MIN(x.low))
                     FROM (SELECT CAST(b.High AS REAL)-CAST(b.Low AS REAL) barRange,
                                  CAST(b.Volume AS REAL) volume,
                                  ABS(CAST(b.Close AS REAL)-CAST(b.Open AS REAL)) body,
-                                 CAST(b.High AS REAL) high,CAST(b.Low AS REAL) low
+                                 CAST(b.High AS REAL) high,CAST(b.Low AS REAL) low,
+                                 ROW_NUMBER() OVER (ORDER BY b.CloseTimeUtc DESC) rn
                           FROM CanonicalResolvedResearchBars b
                           WHERE b.InstrumentId=o.InstrumentId AND b.Timeframe='1m' AND b.CloseTimeUtc<=o.KnownAtUtc
                           ORDER BY b.CloseTimeUtc DESC LIMIT 20) x) context20
@@ -130,9 +132,8 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
             features["time.monthCos"]=(decimal)Math.Cos(2*Math.PI*(formation.Month-1)/12d);
             features[$"context.session.{SessionSegment(known.Hour)}"]=1m;
             features["context.session.progressUtcDay"]=minuteOfDay/1440m;
-            AddMarketFeatures(features,reader.IsDBNull(19)?null:reader.GetString(19),
-                reader.IsDBNull(20)?null:reader.GetString(20));
-            AddContext20Features(features,reader.IsDBNull(21)?null:reader.GetString(21));
+            PointInTimeContextFeatureEncoder.Add(features,reader.IsDBNull(19)?null:reader.GetString(19),
+                reader.IsDBNull(20)?null:reader.GetString(20),reader.IsDBNull(21)?null:reader.GetString(21));
             var labels = new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["directionalCloseTicks"] = Decimal(reader.GetString(16)),
@@ -230,43 +231,6 @@ public sealed class GenericOutcomeDatasetService(PfaDatabase database)
         if (element.ValueKind == JsonValueKind.Object)
             foreach (var property in element.EnumerateObject()) Walk(property.Value, $"{path}.{property.Name}", values);
         else if (element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var value)) values[path] = value;
-    }
-
-    private static void AddMarketFeatures(Dictionary<string,decimal> features,string? latestJson,string? priorCloseText)
-    {
-        if(string.IsNullOrWhiteSpace(latestJson))return;
-        using var document=JsonDocument.Parse(latestJson);var root=document.RootElement;
-        if(!root.TryGetProperty("close",out var closeNode)||!decimal.TryParse(closeNode.GetString(),
-               NumberStyles.Number,CultureInfo.InvariantCulture,out var close)||close==0)return;
-        if(root.TryGetProperty("high",out var highNode)&&root.TryGetProperty("low",out var lowNode)&&
-           decimal.TryParse(highNode.GetString(),NumberStyles.Number,CultureInfo.InvariantCulture,out var high)&&
-           decimal.TryParse(lowNode.GetString(),NumberStyles.Number,CultureInfo.InvariantCulture,out var low))
-        {
-            features["market.rangeFraction"]=(high-low)/close;
-            features["market.closeLocation"]=high==low?0.5m:(close-low)/(high-low);
-        }
-        if(root.TryGetProperty("volume",out var volumeNode)&&decimal.TryParse(volumeNode.GetString(),
-               NumberStyles.Number,CultureInfo.InvariantCulture,out var volume)&&volume>=0)
-            features["market.volumeLog"]=(decimal)Math.Log(1+(double)volume);
-        if(decimal.TryParse(priorCloseText,NumberStyles.Number,CultureInfo.InvariantCulture,out var prior)&&prior!=0)
-            features["market.return5Fraction"]=(close-prior)/prior;
-    }
-
-    private static void AddContext20Features(Dictionary<string,decimal> features,string? json)
-    {
-        if(string.IsNullOrWhiteSpace(json))return;using var document=JsonDocument.Parse(json);var root=document.RootElement;
-        decimal Read(string name)=>root.TryGetProperty(name,out var node)&&node.ValueKind==JsonValueKind.Number&&node.TryGetDecimal(out var value)?value:0m;
-        var range=Read("meanRange20");var volume=Read("meanVolume20");var body=Read("meanBody20");
-        var high=Read("high20");var low=Read("low20");
-        features["context.volatility.meanRange20"]=range;
-        features["context.volume.meanVolume20"]=volume;
-        features["context.trend.meanBodyToRange20"]=range==0?0:body/range;
-        features["context.trend.rangeWidth20"]=high-low;
-        if(features.TryGetValue("market.volumeLog",out var volumeLog)&&volume>0)
-            features["context.volume.relativeVolumeLog"]=(decimal)Math.Exp((double)volumeLog)-1m>0?
-                ((decimal)Math.Exp((double)volumeLog)-1m)/volume:0m;
-        if(features.TryGetValue("market.return5Fraction",out var momentum))
-            features["context.momentum.return5Fraction"]=momentum;
     }
 
     private static string SessionSegment(int hour)=>hour switch

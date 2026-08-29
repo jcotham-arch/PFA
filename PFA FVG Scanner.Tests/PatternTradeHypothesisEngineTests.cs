@@ -156,6 +156,10 @@ public sealed class PatternTradeHypothesisEngineTests
             new(Now.AddHours(4),["MES"],["liquidity-sweep"]),TestContext.Current.CancellationToken);
         Assert.Equal(ActionabilityOutcomeDatasetService.Version,dataset.DatasetVersion);
         Assert.Contains("netR",dataset.LabelNames);Assert.Contains("maximumFavorableExcursionR",dataset.LabelNames);
+        Assert.Contains("context.availability.canonical.latestBar",dataset.FeatureNames);
+        Assert.Contains("context.availability.canonical.context20",dataset.FeatureNames);
+        Assert.Contains("context.availability.external.orderFlow",dataset.FeatureNames);
+        Assert.Contains("context.availability.external.levelTwo",dataset.FeatureNames);
         Assert.True(dataset.ExampleCount>=3);Assert.Equal(0,dataset.TargetHorizonMinutes);
         await using(var chronology=factory.Database.CreateConnection()){await chronology.OpenAsync(TestContext.Current.CancellationToken);
             await using var command=chronology.CreateCommand();command.CommandText="SELECT COUNT(*) FROM AgentResearchExamples WHERE DatasetId=$id AND (FeatureKnownAtUtc<>DecisionTimeUtc OR OutcomeKnownAtUtc<=DecisionTimeUtc)";command.Parameters.AddWithValue("$id",dataset.DatasetId);

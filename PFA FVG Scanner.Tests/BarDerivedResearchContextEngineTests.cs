@@ -13,11 +13,14 @@ public sealed class BarDerivedResearchContextEngineTests
             .Select(i=>Bar(i,start.AddMinutes(i),100+i*.1m,100+i)).ToArray();
         var snapshot=new BarDerivedResearchContextEngine(new LegacyUtcTradingSessionService())
             .Build("MES","MESU6","1m",start.AddMinutes(25),bars);
-        Assert.Equal(8,snapshot.Families.Count);
+        Assert.Equal(12,snapshot.Families.Count);
         Assert.DoesNotContain(snapshot.Families.SelectMany(x=>x.SourceReferences),x=>x.Contains("BAR-25")||x.Contains("BAR-29"));
         Assert.Equal(ContextFeatureAvailability.Available,snapshot.Families.Single(x=>x.FamilyId=="seasonality").Availability);
         Assert.Equal(ContextFeatureAvailability.Available,snapshot.Families.Single(x=>x.FamilyId=="volatility-regime").Availability);
         Assert.Equal("bar-proxy-only",snapshot.Families.Single(x=>x.FamilyId=="liquidity-spread").CategoricalFeatures["measurement"]);
+        Assert.Equal("Normal",snapshot.Families.Single(x=>x.FamilyId=="volatility-regime").CategoricalFeatures["regime"]);
+        Assert.All(snapshot.Families.Where(x=>x.FamilyId is "order-flow" or "level-two" or "options-positioning" or "market-breadth"),
+            x=>{Assert.Equal(ContextFeatureAvailability.SourceUnavailable,x.Availability);Assert.Empty(x.NumericFeatures);});
         Assert.False(snapshot.CanActivateStrategy);Assert.False(snapshot.CanRouteToRealBroker);
     }
 
