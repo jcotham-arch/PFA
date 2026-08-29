@@ -8,7 +8,7 @@ namespace PFA_FVG_Scanner.Services;
 
 public sealed class AgentBaselineTrainingService(PfaDatabase database)
 {
-    public const string Version = "research-promotion-gate-2.5.0";
+    public const string Version = "research-promotion-gate-2.6.0";
 
     public async Task<AgentBaselineRun> TrainAsync(AgentBaselineTrainingRequest request,
         CancellationToken token = default)
@@ -32,7 +32,7 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         var ridgeContext = FitRidge(training,1m,IsResearchContextFeature);
         var ridgeInteractions=FitInteractionRidge(training,8);
         var familyModels=ContextFamilies.ToDictionary(x=>x.Key,x=>FitRidge(training,1m,
-            name=>!IsResearchContextFeature(name)||name.StartsWith(x.Value,StringComparison.Ordinal)),StringComparer.Ordinal);
+            name=>!IsResearchContextFeature(name)||x.Value.Any(prefix=>name.StartsWith(prefix,StringComparison.Ordinal))),StringComparer.Ordinal);
         var boostedStumps = FitBoostedStumps(training, 25, 0.10m);
         decimal Predict(Row row) => groups.TryGetValue(row.GroupKey, out var value) ? value : globalMean;
         AgentBaselineMetric Evaluate(string split, IReadOnlyList<Row> population, Func<Row,decimal> predictor)
@@ -203,10 +203,15 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
         name.StartsWith("context.volatility.",StringComparison.Ordinal)||
         name.StartsWith("context.volume.",StringComparison.Ordinal)||
         name.StartsWith("context.trend.",StringComparison.Ordinal)||
-        name.StartsWith("context.momentum.",StringComparison.Ordinal);
-    private static readonly IReadOnlyDictionary<string,string> ContextFamilies=new Dictionary<string,string>(StringComparer.Ordinal)
-    {{"seasonality","time."},{"session","context.session."},{"volatility","context.volatility."},
-     {"volume","context.volume."},{"trend","context.trend."},{"momentum","context.momentum."}};
+        name.StartsWith("context.momentum.",StringComparison.Ordinal)||
+        name.StartsWith("context.regime.",StringComparison.Ordinal)||
+        name.StartsWith("context.interaction.",StringComparison.Ordinal)||
+        name.StartsWith("context.availability.",StringComparison.Ordinal);
+    private static readonly IReadOnlyDictionary<string,string[]> ContextFamilies=new Dictionary<string,string[]>(StringComparer.Ordinal)
+    {{"seasonality",["time."]},{"session",["context.session."]},{"volatility",["context.volatility."]},
+     {"volume",["context.volume."]},{"trend",["context.trend."]},{"momentum",["context.momentum."]},
+     {"regime-state",["context.regime."]},{"regime-interactions",["context.interaction."]},
+     {"source-availability",["context.availability."]}};
     private static DateTime Parse(string value)=>DateTime.Parse(value,null,DateTimeStyles.RoundtripKind).ToUniversalTime();
 
     private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda,Func<string,bool>? include=null)
@@ -215,6 +220,9 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
     private static RidgeModel FitRidge(IReadOnlyList<Row> training,decimal lambda,Func<string,bool>? include,
         IReadOnlyList<string> additionalNames)
     {
+        const int ridgeTrainingCap=6000;
+        if(training.Count>ridgeTrainingCap)training=Enumerable.Range(0,ridgeTrainingCap)
+            .Select(index=>training[(int)((long)index*training.Count/ridgeTrainingCap)]).ToArray();
         var names=training.SelectMany(x=>x.Features.Keys).Distinct(StringComparer.Ordinal)
             .Where(name=>include?.Invoke(name)??true).Concat(additionalNames).Distinct(StringComparer.Ordinal).Order().ToArray();
         var means=names.Select(name=>training.Average(x=>FeatureValue(x.Features,name))).ToArray();
@@ -277,8 +285,9 @@ public sealed class AgentBaselineTrainingService(PfaDatabase database)
 
     private static BoostedStumpModel FitBoostedStumps(IReadOnlyList<Row> training,int iterations,decimal learningRate)
     {
-        if(training.Count>25000)training=Enumerable.Range(0,25000)
-            .Select(index=>training[(int)((long)index*training.Count/25000)]).ToArray();
+        const int stumpTrainingCap=6000;
+        if(training.Count>stumpTrainingCap)training=Enumerable.Range(0,stumpTrainingCap)
+            .Select(index=>training[(int)((long)index*training.Count/stumpTrainingCap)]).ToArray();
         var names=training.SelectMany(x=>x.Features.Keys).Distinct(StringComparer.Ordinal).Order().ToArray();
         var thresholds=names.ToDictionary(name=>name,name=>
         {

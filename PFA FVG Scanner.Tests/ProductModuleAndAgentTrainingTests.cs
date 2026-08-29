@@ -108,7 +108,10 @@ public sealed class ProductModuleAndAgentTrainingTests
         var ablations=Assert.IsAssignableFrom<IReadOnlyList<AgentContextAblationMetric>>(baseline.ContextAblations);
         Assert.NotEmpty(ablations);Assert.All(ablations,x=>Assert.True(x.TestSamples>0));
         var familyAblations=Assert.IsAssignableFrom<IReadOnlyList<AgentContextFamilyAblationMetric>>(baseline.ContextFamilyAblations);
-        Assert.Equal(6,familyAblations.Count);Assert.Contains(familyAblations,x=>x.FamilyId=="seasonality");
+        Assert.Equal(9,familyAblations.Count);Assert.Contains(familyAblations,x=>x.FamilyId=="seasonality");
+        Assert.Contains(familyAblations,x=>x.FamilyId=="regime-state");
+        Assert.Contains(familyAblations,x=>x.FamilyId=="regime-interactions");
+        Assert.Contains(familyAblations,x=>x.FamilyId=="source-availability");
         Assert.Equal(2,baseline.ModelArtifacts!.Count);var artifact=baseline.ModelArtifacts.Single(x=>x.Variant=="ridge-linear");
         var interactionArtifact=baseline.ModelArtifacts.Single(x=>x.Variant=="ridge-context-interactions");
         Assert.Contains(interactionArtifact.FeatureNames,x=>x.StartsWith("interaction::",StringComparison.Ordinal));
