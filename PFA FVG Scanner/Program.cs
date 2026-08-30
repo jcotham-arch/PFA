@@ -138,6 +138,7 @@ builder.Services.AddSingleton<ExploratorySandboxCandidateService>();
 builder.Services.AddSingleton<ExploratoryPaperCampaignService>();
 builder.Services.AddSingleton<AdaptiveScenarioLabService>();
 builder.Services.AddSingleton<IntermarketContextService>();
+builder.Services.AddSingleton<MesOrderFlowResearchService>();
 builder.Services.AddSingleton<ActionabilitySegmentResearchService>();
 builder.Services.AddSingleton<ActionabilityDecisionPolicyService>();
 builder.Services.AddSingleton<ActionabilityLabelProfileService>();

@@ -72,6 +72,7 @@ namespace PFA_FVG_Scanner.Data
             await CreateTradeJournalTablesAsync(connection);
             await CreateTradeJournalAlignmentTablesAsync(connection);
             await CreateIntermarketContextTablesAsync(connection);
+            await CreateMesOrderFlowResearchTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
@@ -109,6 +110,20 @@ namespace PFA_FVG_Scanner.Data
                 INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
                 VALUES('STRUCTURAL_TRANSITION_RADAR_V1',datetime('now'),
                     'Add immutable external context observations and research-only MES structural transition predictions.');
+                """;await ExecuteAsync(connection,sql);
+        }
+
+        private static async Task CreateMesOrderFlowResearchTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS MesOrderFlowResearchReports
+                (ReportId TEXT PRIMARY KEY,EngineVersion TEXT NOT NULL,AsOfUtc TEXT NOT NULL,BarsEvaluated INTEGER NOT NULL,
+                 CandidateCount INTEGER NOT NULL,DataTier TEXT NOT NULL,ContentHash TEXT NOT NULL,ReportJson TEXT NOT NULL,
+                 CreatedAtUtc TEXT NOT NULL,CanActivateStrategy INTEGER NOT NULL CHECK(CanActivateStrategy=0),
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('MES_ORDER_FLOW_RESEARCH_V1',datetime('now'),
+                    'Add immutable MES sweep and volume-response proxy reports with true order-flow admission gates.');
                 """;await ExecuteAsync(connection,sql);
         }
 
