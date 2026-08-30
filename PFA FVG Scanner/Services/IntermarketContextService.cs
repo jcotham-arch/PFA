@@ -84,6 +84,15 @@ public sealed class IntermarketContextService(PfaDatabase database)
         await command.ExecuteNonQueryAsync(token);return value;
     }
 
+    public async Task<StructuralTransitionBackfillResult> BackfillAsync(int lookbackDays,int spacingMinutes,
+        int maximumPredictions,CancellationToken token=default)
+    {
+        var clocks=await CandidateClocks(lookbackDays,spacingMinutes,maximumPredictions,token);var before=(await GetCalibrationAsync(token)).Predictions;
+        foreach(var clock in clocks){token.ThrowIfCancellationRequested();try{await CaptureAsync(clock,token);}catch(InvalidOperationException){/* Insufficient causal history at this clock. */}}
+        var calibration=await EvaluateAsync(token);return new(clocks.FirstOrDefault(),clocks.LastOrDefault(),clocks.Length,
+            calibration.Predictions-before,calibration,RadarVersion);
+    }
+
     public async Task<StructuralTransitionCalibration> EvaluateAsync(CancellationToken token=default)
     {
         await using var connection=database.CreateConnection();await connection.OpenAsync(token);await using var command=connection.CreateCommand();
@@ -116,9 +125,15 @@ public sealed class IntermarketContextService(PfaDatabase database)
         await using var command=connection.CreateCommand();command.CommandText="SELECT OutcomeJson FROM StructuralTransitionOutcomes ORDER BY EvaluatedAtUtc DESC";
         var outcomes=new List<StructuralTransitionOutcome>();await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token))
         {var value=JsonSerializer.Deserialize<StructuralTransitionOutcome>(reader.GetString(0));if(value is not null)outcomes.Add(value);}
+        var predictionProbabilities=await PredictionProbabilities(connection,token);var bands=outcomes.Join(predictionProbabilities,
+            x=>x.PredictionId,x=>x.Key,(outcome,pair)=>new{Outcome=outcome,Probability=pair.Value})
+            .GroupBy(x=>$"{Math.Floor(x.Probability/10m)*10:0}-{Math.Floor(x.Probability/10m)*10+9:0}%")
+            .OrderBy(x=>x.Key).Select(group=>new StructuralTransitionCalibrationBand(group.Key,group.Count(),
+                group.Average(x=>x.Probability),group.Count(x=>x.Outcome.TransitionOccurred)/(decimal)group.Count(),
+                group.Average(x=>x.Outcome.BrierScore))).ToArray();
         var success=outcomes.Count(x=>x.PredictionSuccessful);return new((int)predictions,outcomes.Count,success,
             outcomes.Count==0?0:success/(decimal)outcomes.Count,outcomes.Count==0?0:outcomes.Average(x=>x.BrierScore),
-            outcomes.Count<30?"AccumulatingShadowEvidence":"CalibrationReviewEligible",outcomes.Take(20).ToArray());
+            outcomes.Count<30?"AccumulatingShadowEvidence":"CalibrationReviewEligible",bands,outcomes.Take(20).ToArray());
     }
 
     private static int? Distance(decimal? strike,decimal? basis,decimal price)=>strike is null||basis is null?null:(int)Math.Round(((strike.Value+basis.Value)-price)/.25m,MidpointRounding.AwayFromZero);
@@ -162,6 +177,26 @@ public sealed class IntermarketContextService(PfaDatabase database)
         Add(command,"$version",value.EvaluatorVersion);Add(command,"$hash",value.ContentHash);Add(command,"$json",JsonSerializer.Serialize(value));await command.ExecuteNonQueryAsync(token);}
     private static async Task<long> Scalar(SqliteConnection connection,string sql,CancellationToken token)
     {await using var command=connection.CreateCommand();command.CommandText=sql;return Convert.ToInt64(await command.ExecuteScalarAsync(token));}
+    private async Task<DateTime[]> CandidateClocks(int lookbackDays,int spacingMinutes,int maximum,CancellationToken token)
+    {
+        await using var connection=database.CreateConnection();await connection.OpenAsync(token);await using var command=connection.CreateCommand();
+        command.CommandText="""
+            WITH latest AS (SELECT MAX(OpenTimeUtc) Value FROM Candles WHERE Symbol LIKE 'MES%' AND Timeframe='1m'),
+            ranked AS
+            (SELECT OpenTimeUtc,ROW_NUMBER() OVER(ORDER BY OpenTimeUtc) row_number FROM
+             (SELECT DISTINCT OpenTimeUtc FROM Candles,latest WHERE Symbol LIKE 'MES%' AND Timeframe='1m'
+              AND IsComplete=1 AND julianday(OpenTimeUtc)>=julianday(latest.Value)-$lookbackDays)),
+            eligible AS (SELECT OpenTimeUtc FROM ranked WHERE row_number % $spacing=0),
+            sampled AS (SELECT OpenTimeUtc,NTILE($maximum) OVER(ORDER BY OpenTimeUtc) sample_bucket FROM eligible)
+            SELECT MIN(OpenTimeUtc) FROM sampled GROUP BY sample_bucket ORDER BY MIN(OpenTimeUtc);
+            """;command.Parameters.AddWithValue("$lookbackDays",lookbackDays);command.Parameters.AddWithValue("$spacing",spacingMinutes);
+        command.Parameters.AddWithValue("$maximum",maximum);var values=new List<DateTime>();await using var reader=await command.ExecuteReaderAsync(token);
+        while(await reader.ReadAsync(token))values.Add(DateTime.Parse(reader.GetString(0),null,DateTimeStyles.RoundtripKind).AddMinutes(1));return values.Order().ToArray();
+    }
+    private static async Task<Dictionary<string,decimal>> PredictionProbabilities(SqliteConnection connection,CancellationToken token)
+    {await using var command=connection.CreateCommand();command.CommandText="SELECT PredictionId,Probability FROM StructuralTransitionPredictions";
+        var values=new Dictionary<string,decimal>();await using var reader=await command.ExecuteReaderAsync(token);while(await reader.ReadAsync(token))
+            values[reader.GetString(0)]=decimal.Parse(reader.GetString(1),CultureInfo.InvariantCulture);return values;}
     private static decimal Parse(SqliteDataReader reader,int ordinal)=>decimal.Parse(reader.GetString(ordinal),CultureInfo.InvariantCulture);
     private static async Task<T?> Latest<T>(SqliteConnection connection,string table,DateTime asOf,CancellationToken token)
     {await using var command=connection.CreateCommand();command.CommandText=$"SELECT PayloadJson FROM {table} WHERE AsOfUtc<=$asOf AND KnownAtUtc<=$asOf ORDER BY AsOfUtc DESC,KnownAtUtc DESC LIMIT 1";

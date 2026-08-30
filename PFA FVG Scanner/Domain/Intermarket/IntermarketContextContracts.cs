@@ -39,4 +39,12 @@ public sealed record StructuralTransitionOutcome(
 
 public sealed record StructuralTransitionCalibration(
     int Predictions,int Evaluated,int Successful,decimal SuccessRate,decimal MeanBrierScore,
-    string Status,IReadOnlyList<StructuralTransitionOutcome> LatestOutcomes);
+    string Status,IReadOnlyList<StructuralTransitionCalibrationBand> Bands,
+    IReadOnlyList<StructuralTransitionOutcome> LatestOutcomes);
+
+public sealed record StructuralTransitionCalibrationBand(
+    string Band,int Predictions,decimal MeanPredictedProbability,decimal ActualTransitionRate,decimal MeanBrierScore);
+
+public sealed record StructuralTransitionBackfillResult(
+    DateTime StartUtc,DateTime EndUtc,int CandidateClocks,int PredictionsStored,
+    StructuralTransitionCalibration Calibration,string EngineVersion);

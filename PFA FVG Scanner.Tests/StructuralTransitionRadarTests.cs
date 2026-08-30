@@ -53,5 +53,17 @@ public sealed class StructuralTransitionRadarTests
         Assert.Equal(prediction.PredictionId,Assert.Single(calibration.LatestOutcomes).PredictionId);
     }
 
+    [Fact]
+    public async Task MultiClockBackfillProducesMeasuredCalibrationBands()
+    {
+        using var factory=await TestDatabaseFactory.CreateAsync();var candles=new CandleRepository(factory.Database);var token=TestContext.Current.CancellationToken;
+        for(var i=0;i<180;i++){var wave=(decimal)Math.Sin(i/8d)*3m;var price=5000m+wave;await candles.SaveAsync(
+            TestData.Candle(i,price,price+1m,price-1m,price+.25m,volume:100+i%20),"TEST",token);}
+        var result=await Service(factory).BackfillAsync(1,15,25,token);
+
+        Assert.True(result.PredictionsStored>0);Assert.True(result.Calibration.Evaluated>0);
+        Assert.NotEmpty(result.Calibration.Bands);
+    }
+
     private static IntermarketContextService Service(TestDatabaseFactory factory)=>new(factory.Database);
 }

@@ -22,6 +22,11 @@ public sealed class IntermarketContextController(IntermarketContextService servi
     [HttpGet("radar/calibration")]
     public async Task<IActionResult> Calibration(CancellationToken token=default)=>Ok(await service.GetCalibrationAsync(token));
 
+    [HttpPost("radar/backfill")]
+    public async Task<IActionResult> Backfill([FromQuery]int lookbackDays=30,[FromQuery]int spacingMinutes=15,
+        [FromQuery]int maximumPredictions=200,CancellationToken token=default)=>Ok(await service.BackfillAsync(
+            Math.Clamp(lookbackDays,1,180),Math.Clamp(spacingMinutes,5,60),Math.Clamp(maximumPredictions,25,500),token));
+
     [HttpPost("observations")]
     public async Task<IActionResult> Observe([FromBody]IntermarketObservationBatch batch,CancellationToken token=default)
     {await service.SaveAsync(batch,token);return Accepted(new{stored=true,researchOnly=true,canRouteToRealBroker=false});}
