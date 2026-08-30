@@ -71,12 +71,45 @@ namespace PFA_FVG_Scanner.Data
             await CreateSequenceTradeResearchTablesAsync(connection);
             await CreateTradeJournalTablesAsync(connection);
             await CreateTradeJournalAlignmentTablesAsync(connection);
+            await CreateIntermarketContextTablesAsync(connection);
 
             // Remove exact duplicate FVG observations that may already
             // exist before creating the natural-key unique index.
             await RemoveExactDuplicateFvgsAsync(connection);
 
             await CreateIndexesAsync(connection);
+        }
+
+        private static async Task CreateIntermarketContextTablesAsync(SqliteConnection connection)
+        {
+            const string sql="""
+                CREATE TABLE IF NOT EXISTS OptionsGammaObservations
+                (ObservationId TEXT PRIMARY KEY,AsOfUtc TEXT NOT NULL,KnownAtUtc TEXT NOT NULL,Symbol TEXT NOT NULL,
+                 Provider TEXT NOT NULL,PayloadJson TEXT NOT NULL,ContentHash TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS VolatilityObservations
+                (ObservationId TEXT PRIMARY KEY,AsOfUtc TEXT NOT NULL,KnownAtUtc TEXT NOT NULL,Symbol TEXT NOT NULL,
+                 Provider TEXT NOT NULL,PayloadJson TEXT NOT NULL,ContentHash TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS IntermarketBreadthObservations
+                (ObservationId TEXT PRIMARY KEY,AsOfUtc TEXT NOT NULL,KnownAtUtc TEXT NOT NULL,Symbol TEXT NOT NULL,
+                 Provider TEXT NOT NULL,PayloadJson TEXT NOT NULL,ContentHash TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS StructuralTransitionPredictions
+                (PredictionId TEXT PRIMARY KEY,InstrumentId TEXT NOT NULL,AsOfUtc TEXT NOT NULL,HorizonMinutes INTEGER NOT NULL,
+                 PredictedTransition TEXT NOT NULL,Probability TEXT NOT NULL,CalibrationStatus TEXT NOT NULL,EngineVersion TEXT NOT NULL,
+                 ContentHash TEXT NOT NULL,PredictionJson TEXT NOT NULL,CreatedAtUtc TEXT NOT NULL,
+                 CanRouteToRealBroker INTEGER NOT NULL CHECK(CanRouteToRealBroker=0));
+                CREATE TABLE IF NOT EXISTS StructuralTransitionOutcomes
+                (OutcomeId TEXT PRIMARY KEY,PredictionId TEXT NOT NULL UNIQUE,EvaluatedAtUtc TEXT NOT NULL,
+                 TransitionOccurred INTEGER NOT NULL,PredictionSuccessful INTEGER NOT NULL,BrierScore TEXT NOT NULL,
+                 EvaluatorVersion TEXT NOT NULL,ContentHash TEXT NOT NULL,OutcomeJson TEXT NOT NULL,
+                 FOREIGN KEY(PredictionId) REFERENCES StructuralTransitionPredictions(PredictionId));
+                CREATE INDEX IF NOT EXISTS IX_OptionsGammaObservations_PointInTime ON OptionsGammaObservations(AsOfUtc,KnownAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_VolatilityObservations_PointInTime ON VolatilityObservations(AsOfUtc,KnownAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_IntermarketBreadthObservations_PointInTime ON IntermarketBreadthObservations(AsOfUtc,KnownAtUtc);
+                CREATE INDEX IF NOT EXISTS IX_StructuralTransitionPredictions_Time ON StructuralTransitionPredictions(InstrumentId,AsOfUtc);
+                INSERT OR IGNORE INTO CanonicalMigrationJournal(MigrationId,AppliedAtUtc,Description)
+                VALUES('STRUCTURAL_TRANSITION_RADAR_V1',datetime('now'),
+                    'Add immutable external context observations and research-only MES structural transition predictions.');
+                """;await ExecuteAsync(connection,sql);
         }
 
         private static async Task ConfigureConcurrencyAsync(SqliteConnection connection)
